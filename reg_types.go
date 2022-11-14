@@ -3,7 +3,7 @@ package goql
 import (
 	"sync"
 
-	"github.com/fzerorubigd/goql/astdata"
+	"goql/astdata"
 )
 
 type typeProvider struct {

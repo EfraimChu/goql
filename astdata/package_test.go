@@ -8,14 +8,14 @@ import (
 )
 
 func TestPackage(t *testing.T) {
-	p, err := ParsePackage("github.com/fzerorubigd/fixture")
+	p, err := ParsePackage("fixture")
 	require.NoError(t, err)
-	assert.Equal(t, p.Path(), "github.com/fzerorubigd/fixture")
+	assert.Equal(t, p.Path(), "fixture")
 	assert.Equal(t, p.Name(), "fixture")
 
 	_, err = translateToFullPath("invalid_path")
 	assert.Error(t, err)
-	_, err = translateToFullPath("github.com/fzerorubigd/not/exists/package")
+	_, err = translateToFullPath("not/exists/package")
 	assert.Error(t, err)
 
 	p = &Package{}

@@ -5,16 +5,16 @@ package main
 import (
 	"database/sql"
 	"encoding/json"
+	"goql/plugin/goqlimport"
 	"log"
 	"os"
 	"reflect"
 	"strings"
 
-	_ "github.com/fzerorubigd/goql"
-	"github.com/fzerorubigd/goql/plugin/goqlimport"
 	"github.com/ogier/pflag"
 	"github.com/olekukonko/tablewriter"
 	"github.com/spf13/cast"
+	_ "goql"
 )
 
 var (

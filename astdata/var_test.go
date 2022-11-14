@@ -30,7 +30,7 @@ func Test() int64 {
 `
 
 func TestVar(t *testing.T) {
-	p, err := ParsePackage("github.com/fzerorubigd/fixture")
+	p, err := ParsePackage("fixture")
 	require.NoError(t, err)
 
 	f, err := p.FindVariable("hi")

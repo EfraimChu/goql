@@ -3,7 +3,7 @@ package goql
 import (
 	"testing"
 
-	"github.com/fzerorubigd/goql/astdata"
+	"goql/astdata"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

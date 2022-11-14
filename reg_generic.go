@@ -1,7 +1,7 @@
 package goql
 
 import (
-	"github.com/fzerorubigd/goql/astdata"
+	"goql/astdata"
 )
 
 type filer interface {

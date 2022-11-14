@@ -5,8 +5,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/fzerorubigd/goql/astdata"
-	"github.com/fzerorubigd/goql/parse"
+	"goql/astdata"
+	"goql/parse"
 )
 
 const (

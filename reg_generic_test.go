@@ -4,9 +4,9 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/fzerorubigd/goql/astdata"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"goql/astdata"
 )
 
 type aller struct {
@@ -45,10 +45,10 @@ func TestGeneric(t *testing.T) {
 	assert.Equal(t, String{Null: true}, genericDoc{}.Value(aller{}))
 	assert.Equal(t, Definition{Definition: &astdata.IdentType{}}, genericDefinition{}.Value(aller{def: &astdata.IdentType{}}))
 
-	p, err := astdata.ParsePackage("github.com/fzerorubigd/fixture")
+	p, err := astdata.ParsePackage("fixture")
 	require.NoError(t, err)
 	assert.Equal(t, String{String: "fixture"}, genericPackageName{}.Value(aller{pkg: p}))
-	assert.Equal(t, String{String: "github.com/fzerorubigd/fixture"}, genericPackagePath{}.Value(aller{pkg: p}))
+	assert.Equal(t, String{String: "fixture"}, genericPackagePath{}.Value(aller{pkg: p}))
 
 	f := p.Files()[0]
 	flName := f.FileName()
@@ -86,7 +86,7 @@ func TestGeneric(t *testing.T) {
 }
 
 func TestProviders(t *testing.T) {
-	p, err := astdata.ParsePackage("github.com/fzerorubigd/fixture")
+	p, err := astdata.ParsePackage("fixture")
 	require.NoError(t, err)
 
 	fn := &functionProvider{

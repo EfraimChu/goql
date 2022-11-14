@@ -5,8 +5,8 @@ package goqlimport
 import (
 	"bytes"
 
-	"github.com/fzerorubigd/goql"
-	"github.com/fzerorubigd/goql/astdata"
+	"goql"
+	"goql/astdata"
 	"golang.org/x/tools/imports"
 )
 

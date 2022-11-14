@@ -3,7 +3,7 @@ package goql
 import (
 	"strings"
 
-	"github.com/fzerorubigd/goql/parse"
+	"goql/parse"
 )
 
 // sortMe is a type to order data based on order sql statement.

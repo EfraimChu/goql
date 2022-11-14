@@ -22,8 +22,8 @@ import (
 	"fmt"
 	"log"
 
-	_ "github.com/fzerorubigd/goql"
-	"github.com/fzerorubigd/goql/astdata"
+	_ "goql"
+	"goql/astdata"
 )
 
 func main() {

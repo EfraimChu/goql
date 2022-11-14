@@ -5,7 +5,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/fzerorubigd/goql/astdata"
+	"goql/astdata"
 )
 
 // ValueType is an enum contain supported value type in system

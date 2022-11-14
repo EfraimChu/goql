@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/fzerorubigd/goql/astdata"
-	"github.com/fzerorubigd/goql/parse"
+	"goql/astdata"
+	"goql/parse"
 	"github.com/stretchr/testify/assert"
 )
 

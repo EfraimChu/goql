@@ -1,6 +1,6 @@
 package goql
 
-import "github.com/fzerorubigd/goql/astdata"
+import "goql/astdata"
 
 type isMapFn int
 

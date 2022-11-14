@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/fzerorubigd/goql/astdata"
+	"goql/astdata"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -15,7 +15,7 @@ func TestDriver(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Error(t, o.Ping()) // actual connection :)
 
-	c, err := sql.Open("goql", "github.com/fzerorubigd/fixture")
+	c, err := sql.Open("goql", "fixture")
 	require.NoError(t, err)
 	defer func() {
 		assert.NoError(t, c.Close())
@@ -67,7 +67,7 @@ func TestDriver(t *testing.T) {
 }
 
 func TestQueryParams(t *testing.T) {
-	c, err := sql.Open("goql", "github.com/fzerorubigd/fixture")
+	c, err := sql.Open("goql", "fixture")
 	require.NoError(t, err)
 	defer func() {
 		assert.NoError(t, c.Close())

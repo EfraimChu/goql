@@ -31,7 +31,7 @@ const (
 `
 
 func TestConst(t *testing.T) {
-	p, err := ParsePackage("github.com/fzerorubigd/fixture")
+	p, err := ParsePackage("fixture")
 	require.NoError(t, err)
 
 	c, err := p.FindConstant("X")

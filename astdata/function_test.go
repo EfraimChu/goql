@@ -28,7 +28,7 @@ func (e E) NoPointer(s string) error {
 `
 
 func TestFunction(t *testing.T) {
-	p, err := ParsePackage("github.com/fzerorubigd/fixture")
+	p, err := ParsePackage("fixture")
 	require.NoError(t, err)
 
 	f, err := p.FindFunction("test")

@@ -3,7 +3,7 @@ package goql
 import (
 	"reflect"
 
-	"github.com/fzerorubigd/goql/astdata"
+	"goql/astdata"
 )
 
 type isStructFn int

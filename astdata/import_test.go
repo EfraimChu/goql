@@ -10,11 +10,11 @@ import (
 var testImport = `
 package example
 
-import "github.com/fzerorubigd/fixture"
+import "fixture"
 `
 
 func TestImport(t *testing.T) {
-	p, err := ParsePackage("github.com/fzerorubigd/fixture")
+	p, err := ParsePackage("fixture")
 	require.NoError(t, err)
 
 	f, err := p.FindImport("ctx")
@@ -44,6 +44,6 @@ func TestImport(t *testing.T) {
 	p.files = append(p.files, fl)
 
 	for i := range fl.imports {
-		assert.Regexp(t, "github.com/fzerorubigd/fixture$", fl.imports[i].Folder())
+		assert.Regexp(t, "fixture$", fl.imports[i].Folder())
 	}
 }
