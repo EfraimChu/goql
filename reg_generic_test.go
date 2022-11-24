@@ -45,7 +45,7 @@ func TestGeneric(t *testing.T) {
 	assert.Equal(t, String{Null: true}, genericDoc{}.Value(aller{}))
 	assert.Equal(t, Definition{Definition: &astdata.IdentType{}}, genericDefinition{}.Value(aller{def: &astdata.IdentType{}}))
 
-	p, err := astdata.ParsePackage("fixture")
+	p, err := astdata.ParsePackage(nil, "fixture", false)
 	require.NoError(t, err)
 	assert.Equal(t, String{String: "fixture"}, genericPackageName{}.Value(aller{pkg: p}))
 	assert.Equal(t, String{String: "fixture"}, genericPackagePath{}.Value(aller{pkg: p}))
@@ -86,7 +86,7 @@ func TestGeneric(t *testing.T) {
 }
 
 func TestProviders(t *testing.T) {
-	p, err := astdata.ParsePackage("fixture")
+	p, err := astdata.ParsePackage(nil, "fixture", false)
 	require.NoError(t, err)
 
 	fn := &functionProvider{

@@ -14,7 +14,7 @@ type FuncType struct {
 }
 
 func (f *FuncType) getDefinitionWithName(name string) string {
-	return name + f.Sign()
+	return name + f.SignWithField()
 }
 
 // Sign return the function sign
@@ -26,6 +26,30 @@ func (f *FuncType) Sign() string {
 			str = "..." + str
 		}
 		args = append(args, str)
+	}
+
+	for a := range f.results {
+		res = append(res, f.results[a].def.String())
+	}
+
+	result := "(" + strings.Join(args, ", ") + ")"
+	if len(res) > 1 {
+		result += " (" + strings.Join(res, ", ") + ")"
+	} else if len(res) == 1 {
+		result += " " + strings.Join(res, ", ")
+	}
+
+	return result
+}
+
+func (f *FuncType) SignWithField() string {
+	var args, res []string
+	for a := range f.parameters {
+		paramType := f.parameters[a].def.String()
+		if f.parameters[a].elip {
+			paramType = "..." + paramType
+		}
+		args = append(args, f.parameters[a].name+" "+paramType)
 	}
 
 	for a := range f.results {

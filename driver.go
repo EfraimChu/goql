@@ -28,7 +28,7 @@ type rows struct {
 }
 
 func (driver) Open(name string) (drv.Conn, error) {
-	p, err := astdata.ParsePackage(name)
+	p, err := astdata.ParsePackage(nil, name, false)
 	if err != nil {
 		return nil, err
 	}

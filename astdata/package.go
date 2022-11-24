@@ -3,6 +3,7 @@ package astdata
 import (
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // Package is the package in one place
@@ -116,6 +117,42 @@ func parsePackageFullPath(path, folder string) (*Package, error) {
 // if the package is imported from another package, the other parameter is required for
 // checking vendors of that package.
 func ParsePackage(path string, packages ...string) (*Package, error) {
+	folder, err := translateToFullPath(path, packages...)
+	if err != nil {
+		return nil, err
+	}
+
+	return parsePackageFullPath(path, folder)
+}
+
+func ParsePackage2(packageMap map[string]*Package, path string, inner bool, packages ...string) error {
+	if p := packageMap[path]; p != nil {
+		return nil
+	}
+	println("load package: ", path)
+	p, err := doLoadPackage(path, packages)
+	if err != nil {
+		return err
+	}
+	packageMap[path] = p
+	if inner {
+		for _, i := range p.Imports() {
+			if strings.Contains(i.path, "framework") {
+				continue
+			}
+			project := "wms-v2"
+			if strings.Contains(i.path, project) {
+				path = strings.Split(i.path, project)[1]
+				err = ParsePackage2(packageMap, path, inner)
+				if err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
+}
+func doLoadPackage(path string, packages []string) (*Package, error) {
 	folder, err := translateToFullPath(path, packages...)
 	if err != nil {
 		return nil, err

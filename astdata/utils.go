@@ -72,6 +72,18 @@ func translateToFullPath(path string, packages ...string) (string, error) {
 			return test, nil
 		}
 	}
+	//todo 临时处理
+	if strings.Contains(path, "git.garena.com/shopee/bg-logistics/tianlu/wms-v2") {
+		path = strings.Split(path, "wms-v2")[1]
+	}
+	if qlDir := os.Getenv("QL_DIR"); len(qlDir) > 0 {
+		test = filepath.Join(qlDir, path)
+		r, err = os.Stat(test)
+		if err == nil && r.IsDir() {
+			return test, nil
+		}
+	}
+
 	return "", fmt.Errorf("%s is not found in GOROOT or GOPATH", path)
 }
 
