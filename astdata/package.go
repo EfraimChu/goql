@@ -152,8 +152,30 @@ func ParsePackage2(packageMap map[string]*Package, path string, inner bool, pack
 	}
 	return nil
 }
+
+func ParsePbPackage2(packageMap map[string]*Package, path string, packages ...string) error {
+	if p := packageMap[path]; p != nil {
+		return nil
+	}
+	println("load package: ", path)
+	p, err := doLoadPbPackage(path, packages)
+	if err != nil {
+		return err
+	}
+	packageMap[path] = p
+	return nil
+}
 func doLoadPackage(path string, packages []string) (*Package, error) {
 	folder, err := translateToFullPath(path, packages...)
+	if err != nil {
+		return nil, err
+	}
+
+	return parsePackageFullPath(path, folder)
+}
+
+func doLoadPbPackage(path string, packages []string) (*Package, error) {
+	folder, err := translateToPbFullPath(path, packages...)
 	if err != nil {
 		return nil, err
 	}

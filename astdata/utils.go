@@ -86,6 +86,52 @@ func translateToFullPath(path string, packages ...string) (string, error) {
 
 	return "", fmt.Errorf("%s is not found in GOROOT or GOPATH", path)
 }
+func translateToPbFullPath(path string, packages ...string) (string, error) {
+	root := runtime.GOROOT()
+	p := os.Getenv("GOPATH")
+	if p == "" {
+		// TODO : go 1.7 has a default gopath value, must check for other values
+		usr, err := user.Current()
+		if err != nil {
+			return "", err
+		}
+		p = filepath.Join(usr.HomeDir, "go")
+	}
+	gopath := strings.Split(p, ":")
+	gopath = append([]string{root}, gopath...)
+	var (
+		test string
+		r    os.FileInfo
+		err  error
+	)
+
+	// First try to find it from vendors
+	for i := range packages {
+		p := filepath.Join(packages[i], "vendor")
+		test = filepath.Join(p, path)
+		r, err = os.Stat(test)
+		if err == nil && r.IsDir() {
+			return test, nil
+		}
+	}
+
+	for i := range gopath {
+		test = filepath.Join(gopath[i], "src", path)
+		r, err = os.Stat(test)
+		if err == nil && r.IsDir() {
+			return test, nil
+		}
+	}
+	if qlDir := os.Getenv("PB_DIR"); len(qlDir) > 0 {
+		test = filepath.Join(qlDir, path)
+		r, err = os.Stat(test)
+		if err == nil && r.IsDir() {
+			return test, nil
+		}
+	}
+
+	return "", fmt.Errorf("%s is not found in GOROOT or GOPATH", path)
+}
 
 func getGoFileContent(path, folder string, f os.FileInfo) (string, error) {
 	if f.IsDir() {
