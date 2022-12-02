@@ -1,11 +1,11 @@
 package astdata
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"github.com/TwiN/go-color"
 	"github.com/emirpasic/gods/sets/hashset"
+	"github.com/gobeam/stringy"
 	"io/ioutil"
 	"regexp"
 	"strings"
@@ -116,8 +116,8 @@ func TestWMSV2(t *testing.T) {
 
 	genConf := &CodeGenConf{
 		genTplFile:           false,
-		genProxyWMSAPICode:   true,
-		genWMSBasicV2APICode: false,
+		genProxyWMSAPICode:   false,
+		genWMSBasicV2APICode: true,
 		genSrcProxyCodeFile:  false,
 	}
 
@@ -266,7 +266,7 @@ func genBasicV2APICodeFile(pkgName string, basicV2ViewType string, base string, 
 		"TaskSizeTypeManager": "tasksizeTypeManger",
 	}
 	module := pcode.p.name
-	//filePre := base + "/" + module
+	filePre := base + "/" + module
 
 	packageHead := fmt.Sprintf("package %s", pkgName)
 	apiFiles := []string{packageHead}
@@ -296,50 +296,103 @@ func genBasicV2APICodeFile(pkgName string, basicV2ViewType string, base string, 
 		packageHead,
 	}
 	for _, basicapi := range pcode.basicAPIPbsMap {
+		receiver := basicapi.api.ReceiverName
+		curReceiver := callMngMap[receiver]
+		if strings.Contains(receiver, "Proxy") {
+			continue
+		}
 		funcs := []string{}
 		viewMethod := basicapi.api.endpointEnum()
 		sign := fmt.Sprintf("func (v *%s) %s(ctx context.Context, header *wrapper.ReqHeader, request interface{}) (interface{}, *wmserror.WMSError) {", basicV2ViewType, viewMethod)
 		funcs = append(funcs, sign)
 
-		funcs = append(funcs, fmt.Sprintf("req := request.(*%s)", basicapi.api.apiPbReqType()))
+		//大于的请求，才需要解析req
+		if len(basicapi.ReqFields) > 1 {
+			funcs = append(funcs, fmt.Sprintf("req := request.(*%s)", basicapi.api.apiPbReqType()))
+		}
 		paramLines := []string{}
 
-		for _, field := range basicapi.ReqFields {
-			if field.isContext() {
-				continue
-			}
-			paramLines = append(paramLines, field.defTypeSign())
-		}
+		//for _, field := range basicapi.ReqFields {
+		//	if field.isContext() {
+		//		continue
+		//	}
+		//	paramLines = append(paramLines, field.defTypeSign())
+		//}
+
 		//structItemLines = basicapi.invokeAlias()
 
 		paramLines = append(paramLines, "")
-		paramLines = append(paramLines, "// call")
-
 		funcs = append(funcs, paramLines...)
 
-		receiver := basicapi.api.ReceiverName
+		_, lines := basicapi.api.genBasicToWMSV2PreItemDefLines(pbSrcPkg)
+		funcs = append(funcs, lines...)
+
 		method := basicapi.api.Method
-		invokeParamStr := strings.Join(basicapi.invokeAlias(), ",")
+		invokeParamStr := strings.Join(basicapi.viewInvokeAlias(), ",")
 		invokeRetStr := strings.Join(basicapi.api.apiRets(), ",")
 
-		callLine := fmt.Sprintf(" %s:= v.%s.%s(%s)", invokeRetStr, callMngMap[receiver], method, invokeParamStr)
+		callLine := fmt.Sprintf(" %s:= v.%s.%s(%s)", invokeRetStr, curReceiver, method, invokeParamStr)
+		if len(basicapi.api.apiPbRets()) == 1 && basicapi.api.genBasicV2Err {
+			callLine = strings.ReplaceAll(callLine, ":", "")
+		}
 		handlerErr := basicapi.viewHandlerErr()
 		funcs = append(funcs, callLine)
 		funcs = append(funcs, handlerErr)
 
 		//convert to
+		//convert
+		for i, retType := range basicapi.api.Resp {
+			if retType == "*wmserror.WMSError" {
+				continue
+			}
+			if isNormalType(retType) {
+				continue
+			}
+			originRet := fmt.Sprintf("ret%v", i+1)
+			val := originRet
+			var def string
+			pbType := toPbType(retType)
+			if strings.Contains(retType, "[]") {
+				val += "Items"
+				def = fmt.Sprintf("%v:=[]*pb%s.%s{}", val, module, pbType)
+			} else {
+				val += "Item"
+				def = fmt.Sprintf("%v:=&pb%s.%s{}", val, module, pbType)
+			}
+			funcs = append(funcs, def)
+			copyJson := `		if jsErr := copier.Copy(%s,%s); jsErr != nil {
+			return nil, wmserror.NewError(constant.ErrJsonDecodeFail, jsErr.Error())
+		}`
+			if strings.Contains(def, "[]") {
+				funcs = append(funcs, fmt.Sprintf(copyJson, originRet, "&"+val))
+			} else {
+				funcs = append(funcs, fmt.Sprintf(copyJson, originRet, "&"+val))
+			}
+		}
 
-		//todo 实现逻辑
-		funcs = append(funcs, fmt.Sprintf("resp := &%s{}", basicapi.api.apiPbRespType()))
+		if len(basicapi.api.Resp) == 1 {
+			funcs = append(funcs, fmt.Sprintf("resp := &%s{}", basicapi.api.apiPbRespType()))
+		} else {
+			funcs = append(funcs, fmt.Sprintf("resp := &%s{", basicapi.api.apiPbRespType()))
+			for i, retType := range basicapi.api.Resp {
+				if retType == "*wmserror.WMSError" {
+					continue
+				}
+				val := fmt.Sprintf("ret%v", i+1)
+				funcs = append(funcs, fmt.Sprintf("Ret%v:%s,", i+1, convertToPbType(retType, val)))
+			}
+			funcs = append(funcs, "}")
+		}
 		funcs = append(funcs, "return resp,nil")
 		funcs = append(funcs, "}")
+
 		basicAPIImps = append(basicAPIImps, funcs...)
 	}
 
-	//err = ioutil.WriteFile(filePre+"_proxy_handler_impl.go", []byte(strings.Join(basicAPIImps, "\n")), 0644)
-	//if err != nil {
-	//	return err
-	//}
+	err := ioutil.WriteFile(filePre+"_proxy_handler_impl.go", []byte(strings.Join(basicAPIImps, "\n")), 0644)
+	if err != nil {
+		return err
+	}
 	println(strings.Join(apiFiles, "\n"))
 	println(strings.Join(basicAPIImps, "\n"))
 
@@ -633,6 +686,30 @@ func assignToPbType(field *ReqField) string {
 	}
 
 	return fmt.Sprintf("%sItem", field.Alias)
+}
+
+func convertToPbType(fieldType, val string) string {
+
+	if fieldType == "string" {
+		return fmt.Sprintf("convert.String(%s)", val)
+	}
+	if fieldType == "[]string" {
+		return val
+	}
+	if fieldType == "[]int64" {
+		return val
+	} else if fieldType == "int64" {
+		return fmt.Sprintf("convert.Int64(%s)", val)
+
+	} else if fieldType == "MapItem" {
+		return "mapItemLists"
+	} else if fieldType == "map[string]interface{}" {
+		return "mapItemLists"
+	} else if isSturctItems(fieldType) {
+		return fmt.Sprintf("%sItems", val)
+	}
+
+	return fmt.Sprintf("%sItem", val)
 }
 
 func (field *ReqField) assignToPbType() string {
@@ -1083,6 +1160,9 @@ func parseFuncs(p *Package, inStructSet *hashset.Set, outStructSet *hashset.Set)
 			println(function.name, " is not receiver")
 			continue
 		}
+		if strings.Contains(strings.ToLower(function.file.fileName), "proxy") {
+			continue
+		}
 		//like skuManager
 		originObjName := receiver.def.String()
 		receiverName := originObjName + "Proxy"
@@ -1132,6 +1212,7 @@ type API struct {
 	ReceiverAlias string
 	ReceiverName  string
 	Pkg           *Package
+	genBasicV2Err bool
 }
 
 type BASICAPI struct {
@@ -1167,7 +1248,19 @@ func (b BASICAPI) invokeAlias() []string {
 	return items
 }
 
+func (b BASICAPI) viewInvokeAlias() []string {
+	var items []string
+	for _, field := range b.ReqFields {
+		items = append(items, field.formatFieldAlias())
+	}
+	return items
+}
+
 func (b BASICAPI) viewHandlerErr() string {
+	return b.api.viewHandlerErr()
+}
+
+func (b API) viewHandlerErr() string {
 	var lines []string
 	lines = append(lines, "if err!=nil {")
 	lines = append(lines, "return nil, err.Mark()")
@@ -1238,6 +1331,24 @@ func (f ReqField) convertPageInAssignLines(module string) []string {
 	return lines
 }
 
+func (f ReqField) convertPbToBasic(module string) []string {
+	field := &f
+	var lines []string
+	line := `
+	var %s *paginator.PageIn
+	if pageInItem := req.PageIn; pageInItem != nil {
+		%s = &paginator.PageIn{
+			Pageno:     pageInItem.GetPageno(),
+			Count:      pageInItem.GetCount(),
+			OrderBy:    pageInItem.GetOrderBy(),
+			IsGetTotal: pageInItem.GetIsGetTotal(),
+		}
+	}
+`
+	lines = append(lines, fmt.Sprintf(line, field.Alias, field.Alias))
+	return lines
+}
+
 func (f ReqField) toDefItemOrItems(module string) []string {
 	field := &f
 	var params = []string{}
@@ -1249,6 +1360,57 @@ func (f ReqField) toDefItemOrItems(module string) []string {
 	}
 	return params
 
+}
+func (f ReqField) toDefBasicItemOrItems(module string) []string {
+	field := &f
+	var params = []string{}
+	if strings.Contains(field.Type, ".") {
+		if strings.Contains(field.Type, "[]") {
+			return []string{fmt.Sprintf("%s=%s{}", field.formatFieldAlias(), field.Type)}
+		} else {
+			type1 := strings.ReplaceAll(field.Type, "*", "")
+			return []string{fmt.Sprintf("%s=&%s{}", field.formatFieldAlias(), type1)}
+		}
+	}
+
+	type1 := strings.ReplaceAll(field.Type, "*", "")
+	if isSturctItems(field.Type) {
+		params = append(params, fmt.Sprintf("%s=[]*%s.%s{}", field.formatFieldAlias(), module, type1))
+	} else {
+		params = append(params, fmt.Sprintf("%s=&%s.%s{}", field.formatFieldAlias(), module, type1))
+	}
+	return params
+
+}
+
+func (f ReqField) toDefBasicItemOrItemsWithoutInit(module string) []string {
+	field := &f
+	var params = []string{}
+	if strings.Contains(field.Type, ".") {
+		if strings.Contains(field.Type, "[]") {
+			return []string{fmt.Sprintf("var %s %s", field.Alias, field.Type)}
+		} else {
+			type1 := strings.ReplaceAll(field.Type, "*", "")
+			return []string{fmt.Sprintf("var %s *%s", f.formatFieldAlias(), type1)}
+		}
+	}
+
+	type1 := strings.ReplaceAll(field.Type, "*", "")
+	if isSturctItems(field.Type) {
+		params = append(params, fmt.Sprintf("var %s []*%s.%s", field.Alias, module, type1))
+	} else {
+		params = append(params, fmt.Sprintf("var %s *%s.%s", field.Alias, module, type1))
+	}
+	return params
+
+}
+
+func (f ReqField) formatFieldAlias() string {
+	field := &f
+	if field.Alias == "entity" {
+		return "entityItem"
+	}
+	return field.Alias
 }
 
 func (f ReqField) genDealCopyJsErrLines(isDefineJsErr *bool, api API) []string {
@@ -1271,7 +1433,11 @@ func (f ReqField) genDealCopyJsErrLines(isDefineJsErr *bool, api API) []string {
 	return params
 }
 
-func (api API) proxyFuncBody() string {
+func (field *ReqField) toPbType() interface{} {
+	return toPbType(field.Type)
+}
+
+func (api *API) proxyFuncBody() string {
 	var bodyStr []string
 	bodyStr = append(bodyStr, api.FuncSignStr+"{")
 
@@ -1369,7 +1535,7 @@ func (api API) proxyFuncBody() string {
 
 	return strings.Join(bodyStr, "\n")
 }
-func (api API) proxyBasicFuncBody(pbPkg *Package) string {
+func (api *API) proxyBasicFuncBody(pbPkg *Package) string {
 
 	//module := api.Pkg.name
 	var bodyStr []string
@@ -1384,7 +1550,7 @@ func (api API) proxyBasicFuncBody(pbPkg *Package) string {
 	bodyStr = append(bodyStr, "")
 
 	var params []string
-	isDefineJsErr, preDefLines := api.genPreItemDefLines()
+	isDefineJsErr, preDefLines := api.genWmsV2ToBasicPreItemDefLines()
 	params = append(params, preDefLines...)
 
 	params = append(params, "\n// do requets")
@@ -1437,7 +1603,7 @@ func (api API) proxyBasicFuncBody(pbPkg *Package) string {
 	return strings.Join(bodyStr, "\n")
 }
 
-func (api API) assignReturnAssign(isDefineJsErr bool, copyLine string) []string {
+func (api *API) assignReturnAssign(isDefineJsErr bool, copyLine string) []string {
 	var bodyStr []string
 	var respAssgins []string
 	if len(api.apiRets()) > 0 {
@@ -1478,7 +1644,7 @@ func (api API) assignReturnAssign(isDefineJsErr bool, copyLine string) []string 
 	return bodyStr
 }
 
-func (api API) genNormalErrLines() []string {
+func (api *API) genNormalErrLines() []string {
 	bodyStr := []string{}
 	if len(api.apiRets()) > 1 {
 		errMsg := "\t\treturn  %s, err.Mark()"
@@ -1491,7 +1657,7 @@ func (api API) genNormalErrLines() []string {
 }
 
 //如：whsId对应pb可能是：WhsID
-func (api API) parsePbFieldType(pbPkg *Package, field *ReqField) string {
+func (api *API) parsePbFieldType(pbPkg *Package, field *ReqField) string {
 	fieldType := strings.ToLower(field.Alias)
 	pbType := upFirstChar(field.Alias)
 	if api.parsePbReqType(pbPkg)[fieldType] != nil {
@@ -1504,7 +1670,7 @@ func (api API) parsePbFieldType(pbPkg *Package, field *ReqField) string {
 	return pbType
 }
 
-func (api API) genPreItemDefLines() (bool, []string) {
+func (api *API) genBasicToWMSV2PreItemDefLines(pbPkg *Package) (bool, []string) {
 	module := api.Pkg.name
 	isDefineJsErr := false
 	params := []string{}
@@ -1515,66 +1681,93 @@ func (api API) genPreItemDefLines() (bool, []string) {
 
 		if field.isUpdateMap() {
 			var lines []string
-			lines = api.convertToMapUpdateItemsLine(field)
+			lines = api.convertToUpdateMapLine(field)
+			params = append(params, lines...)
+			continue
+		}
+
+		if strings.Contains(toPbType(field.Type), "Item") && field.Type != "*paginator.PageIn" {
+			lines := []string{}
+			initLines := field.toDefBasicItemOrItemsWithoutInit(module)
+			lines = append(lines, initLines...)
+
+			upAlias := upFirstChar(field.formatFieldAlias())
+			//兼容MsizetypeCreateTaskSizeType
+			if field.Alias == "size" {
+				upAlias = "Item"
+			}
+			if field.Alias == "entity" {
+				upAlias = "Entity"
+			}
+			lines = append(lines, fmt.Sprintf("if req.%s != nil {", upAlias))
+			origItem := field.toDefBasicItemOrItems(module)
+			lines = append(lines, origItem...)
+			errMsg := "\t\tif jsErr := copier.Copy(req.%s, %s); jsErr != nil {\n\t\t\treturn nil, wmserror.NewError(constant.ErrJsonDecodeFail, jsErr.Error())\n\t\t}"
+			lines = append(lines, fmt.Sprintf(errMsg, upAlias, field.formatFieldAlias()))
+
+			lines = append(lines, "}")
+
+			//lines = append(lines, api.viewHandlerErr())
+			params = append(params, lines...)
+		}
+
+		//*paginator.PageIn
+		if field.isPageInItem() {
+			lines := field.convertPbToBasic(module)
+			params = append(params, lines...)
+		}
+
+		if isNormalType(field.Type) {
+			var item string
+			//if field.Alias == "whsID" {
+			//	item = fmt.Sprintf("var \t%s =req.GetWhsId()", field.aliasDef())
+			//} else {
+
+			pbType := api.parsePbFieldType(pbPkg, field)
+			item = fmt.Sprintf("var \t%s =req.Get%s()", field.aliasDef(), pbType)
+			//}
+			params = append(params, item)
+		}
+
+	}
+	return isDefineJsErr, params
+}
+
+func (api *API) genWmsV2ToBasicPreItemDefLines() (bool, []string) {
+	module := api.Pkg.name
+	isDefineJsErr := false
+	params := []string{}
+	for _, field := range api.ReqFields {
+		if field.isContext() {
+			continue
+		}
+
+		if field.isUpdateMap() {
+			var lines []string
+			lines = api.convertToUpdateMapLine(field)
 			params = append(params, lines...)
 			continue
 		}
 
 		if strings.Contains(toPbType(field.Type), "Item") && field.Type != "*paginator.PageIn" {
 			lines := field.toDefItemOrItems(module)
-			//if isSturctItems(field.Type) {
-			//	params = append(params, fmt.Sprintf("%s:=[]*pb%s.%s{}", pbType, module, toPbSliceStructItemType(field.Type)))
-			//} else {
-			//	params = append(params, fmt.Sprintf("%s:=&pb%s.%s{}", pbType, module, toPbSliceStructItemType(field.Type)))
-			//}
-			//
-			//jsErr := copier.Copy(nil, nil)
-			//if jsErr != nil {
-			//	return ret1, wmserror.NewError(constant.ErrBadRequest, "json convert err:%v", jsErr.Error())
-			//}
 
-			errLines := field.genDealCopyJsErrLines(&isDefineJsErr, api)
+			errLines := field.genDealCopyJsErrLines(&isDefineJsErr, *api)
 			lines = append(lines, errLines...)
 			params = append(params, lines...)
-			//pbType := assignToPbType(field)
-			//if isDefineJsErr {
-			//	copyLine = strings.ReplaceAll(copyLine, ":", "")
-			//} else {
-			//	isDefineJsErr = true
-			//}
-			//params = append(params, fmt.Sprintf(copyLine, field.Alias, pbType))
-			//
-			//errLines := dealCopyErrLines(retItemVars)
-			//params = append(params, errLines...)
-			//params = append(params, "}")
 		}
 
 		//*paginator.PageIn
 		if field.isPageInItem() {
 			lines := field.convertPageInAssignLines(module)
 			params = append(params, lines...)
-			//pbType := assignToPbType(field)
-			//params = append(params, fmt.Sprintf("%s:=&pb%s.%s{", pbType, module, toPbSliceStructItemType(field.Type)))
-			////		Pageno:     convert.Int64(pageIn.Pageno),
-			////		Count:      convert.Int64(pageIn.Count),
-			////		OrderBy:    convert.String(pageIn.OrderBy),
-			////		IsGetTotal: convert.Bool(pageIn.IsGetTotal),
-			//alias := field.Alias
-			//params = append(params, fmt.Sprintf("\tPageno:     convert.Int64(%s.Pageno),", alias))
-			//params = append(params, fmt.Sprintf("\tCount:     convert.Int64(%s.Count),", alias))
-			//params = append(params, fmt.Sprintf("\tOrderBy:     convert.String(%s.OrderBy),", alias))
-			//params = append(params, fmt.Sprintf("\tIsGetTotal:     convert.Bool(%s.IsGetTotal),", alias))
-			//params = append(params, "}")
-			//
 		}
 
-		//item := fmt.Sprintf("\t%s:%s,", upFirstChar(field.Alias), assignToPbType(field))
-		//params = append(params, item)
 	}
 	return isDefineJsErr, params
 }
 
-func (api API) convertToMapUpdateItemsLine(field *ReqField) []string {
+func (api *API) convertToMapUpdateItemsLine(field *ReqField) []string {
 	var params []string
 	retItemVars := api.apiRets()
 	params = append(params, fmt.Sprintf("mapItemLists,err := convertToMapUpdateItems(%s)", field.Alias))
@@ -1590,16 +1783,25 @@ func (api API) convertToMapUpdateItemsLine(field *ReqField) []string {
 	return params
 }
 
-func (api API) apiPbReqType() string {
+func (api *API) convertToUpdateMapLine(field *ReqField) []string {
+	var params []string
+	params = append(params, fmt.Sprintf("%s,err := pbconvert.ConvertUpdateMaps(req.GetUpdateMap())", field.Alias))
+
+	params = append(params, api.viewHandlerErr())
+	api.genBasicV2Err = true
+	return params
+}
+
+func (api *API) apiPbReqType() string {
 	module := api.Pkg.name
 	return fmt.Sprintf("pb%s.%sRequest", module, api.Method)
 }
-func (api API) apiPbRespType() string {
+func (api *API) apiPbRespType() string {
 	module := api.Pkg.name
 	return fmt.Sprintf("pb%s.%sResponse", module, api.Method)
 }
 
-func (api API) endpointEnum() string {
+func (api *API) endpointEnum() string {
 	endPointEnum := upFirstChar(api.Pkg.name) + api.Method
 	return endPointEnum
 }
@@ -1632,7 +1834,7 @@ func isNormalType(fieldTypeStr string) bool {
 	return false
 }
 
-func (api API) parsePbType(pbPkg *Package, pbReqType string, itemTypeMap map[string]map[string]*Field) {
+func (api *API) parsePbType(pbPkg *Package, pbReqType string, itemTypeMap map[string]map[string]*Field) {
 	if pbPkg != nil {
 		pbItemType, err := pbPkg.FindType(pbReqType)
 		if err != nil {
@@ -1649,10 +1851,23 @@ func (api API) parsePbType(pbPkg *Package, pbReqType string, itemTypeMap map[str
 }
 
 // eg [ret1,ret2,err]
-func (api API) apiRets() []string {
+func (api *API) apiRets() []string {
 	rets := []string{}
 	for i, ret := range api.Resp {
 		v := fmt.Sprintf("ret%d", i+1)
+		if ret == "*wmserror.WMSError" {
+			v = "err"
+		}
+		rets = append(rets, v)
+	}
+	return rets
+}
+
+func (api *API) apiPbRets() []string {
+	rets := []string{}
+	for i, ret := range api.Resp {
+		v := fmt.Sprintf("ret%d", i+1)
+		v = convertToPbType(ret, v)
 		if ret == "*wmserror.WMSError" {
 			v = "err"
 		}
@@ -1665,7 +1880,7 @@ func (api API) apiRets() []string {
 //	 "var ret1 int64",
 //	 "var err *wmserr.err",
 //]
-func (api API) apiRetDefs() []string {
+func (api *API) apiRetDefs() []string {
 	rets := []string{}
 	for i, ret := range api.Resp {
 		v := fmt.Sprintf("var %s  %s", fmt.Sprintf("ret%d", i+1), ret)
@@ -1687,7 +1902,7 @@ func (api API) apiRetDefs() []string {
 	return rets
 }
 
-func (api API) proxyFuncBody2() string {
+func (api *API) proxyFuncBody2() string {
 	var bodyStr []string
 	bodyStr = append(bodyStr, api.FuncSignStr+"{")
 
@@ -1768,7 +1983,7 @@ func (api API) proxyFuncBody2() string {
 
 	return strings.Join(bodyStr, "\n")
 }
-func (api API) proxyPbAPIReq() string {
+func (api *API) proxyPbAPIReq() string {
 	basicAPI := &BASICAPI{
 		Package:     "",
 		Req:         nil,
@@ -1820,14 +2035,14 @@ func (api API) proxyPbAPIReq() string {
 
 }
 
-func (api API) proxyPbAPI() *BASICAPI {
+func (api *API) proxyPbAPI() *BASICAPI {
 	basicAPI := &BASICAPI{
 		Package:     "",
 		Req:         nil,
 		ReqFields:   nil,
 		RespTypeStr: nil,
 		Pkg:         nil,
-		api:         api,
+		api:         *api,
 	}
 
 	basicAPI.Package = api.Package
@@ -1839,7 +2054,7 @@ func (api API) proxyPbAPI() *BASICAPI {
 
 }
 
-func (api API) proxyProxyAPIReqItem() []string {
+func (api *API) proxyProxyAPIReqItem() []string {
 	basicAPI := &BASICAPI{}
 
 	basicAPI.Path = "openapi/basic/" + api.Path + "/" + api.Method
@@ -1883,7 +2098,7 @@ func (api API) proxyProxyAPIReqItem() []string {
 
 }
 
-func (api API) BasicAPIInterfaceSignWithComment() string {
+func (api *API) BasicAPIInterfaceSignWithComment() string {
 	//prefix := "// proxy 原来 msku.SKUManager GetSkuSetForHighValueByWhsID 的请求\n "
 	prefix := fmt.Sprintf("// %s \n// proxy 原来 %s.%s %s 的请求\n ", api.Method, api.Package, api.ReceiverName, api.Method)
 	//println(prefix)
@@ -1891,12 +2106,12 @@ func (api API) BasicAPIInterfaceSignWithComment() string {
 	return prefix + sign
 }
 
-func (api API) proxyBasicSign() string {
+func (api *API) proxyBasicSign() string {
 	sign := fmt.Sprintf("%s(%s) %s", api.Method, api.methodReqSign(), api.methodReturnSign())
 	return sign
 }
 
-func (api API) methodReturnSign() string {
+func (api *API) methodReturnSign() string {
 	var retParams []string
 	for i := range api.Resp {
 		retParams = append(retParams, fmt.Sprintf("%s ", api.Resp[i]))
@@ -1909,7 +2124,7 @@ func (api API) methodReturnSign() string {
 	}
 	return retSign
 }
-func (api API) genInnerDefPkgStructs() []string {
+func (api *API) genInnerDefPkgStructs() []string {
 	innerStructset := hashset.New()
 	for _, field := range api.ReqFields {
 		fieldType := field.Type
@@ -1929,7 +2144,7 @@ func (api API) genInnerDefPkgStructs() []string {
 	}
 	return items
 }
-func (api API) genOuterDefPkgStructs() []string {
+func (api *API) genOuterDefPkgStructs() []string {
 	outStructset := hashset.New()
 	for _, field := range api.ReqFields {
 		fieldType := field.Type
@@ -1956,7 +2171,7 @@ func (api API) genOuterDefPkgStructs() []string {
 	}
 	return items
 }
-func (api API) genInnerPkgStructDef(fieldType string) string {
+func (api *API) genInnerPkgStructDef(fieldType string) string {
 	var def = []string{}
 	defHead := fmt.Sprintf("type %sItem struct{", fieldType)
 	def = append(def, defHead)
@@ -1976,7 +2191,7 @@ func (api API) genInnerPkgStructDef(fieldType string) string {
 	return strings.Join(def, "\n")
 }
 
-func (api API) methodReqSign() string {
+func (api *API) methodReqSign() string {
 	var params []string
 	for _, field := range api.ReqFields {
 		curFieldType := field.Type
@@ -1989,7 +2204,7 @@ func (api API) methodReqSign() string {
 	return strings.Join(params, ",")
 }
 
-func (api API) isNeedRedefineStruct(field *ReqField) bool {
+func (api *API) isNeedRedefineStruct(field *ReqField) bool {
 	isNeedRedefineStruct := !strings.Contains(field.Type, ".") &&
 		!strings.Contains(field.Type, "map[string]") &&
 		field.Type != "context.Context" &&
@@ -2000,7 +2215,7 @@ func (api API) isNeedRedefineStruct(field *ReqField) bool {
 	return isNeedRedefineStruct
 }
 
-func (api API) genBasicAPIMethod() string {
+func (api *API) genBasicAPIMethod() string {
 	//全是POST ，但是通过业务层去控制，是不是幂等操作
 
 	return "POST"
@@ -2010,13 +2225,13 @@ func (api API) genBasicAPIMethod() string {
 	//return "GET"
 }
 
-func (api API) pbReqType() string {
+func (api *API) pbReqType() string {
 	return fmt.Sprintf("%sRequest", api.Method)
 
 }
 
 // 解析pb对应的字段map，可以获取到对应的json tag
-func (api API) parsePbReqType(pbPkg *Package) map[string]*Field {
+func (api *API) parsePbReqType(pbPkg *Package) map[string]*Field {
 	pbReqType := api.pbReqType()
 	itemTypeMap := map[string]map[string]*Field{}
 	api.parsePbType(pbPkg, pbReqType, itemTypeMap)
@@ -2048,29 +2263,10 @@ type DTO struct {
 	Val string
 }
 
-// camel2Case 私有方法驼峰转大写+指定分隔符
-func camel2Case(name, split string) string {
-	buffer := bytes.NewBufferString("")
-	beforeUpper := false
-	continueUpper := 0
-	for i, r := range name {
-		if unicode.IsUpper(r) {
-			if i != 0 && !beforeUpper { //前一个字符为小写
-				buffer.WriteString(split)
-			}
-			if i != 0 && continueUpper > 1 && i < len(name)-1 && unicode.IsLower([]rune(name)[i+1]) { //专属名称结束
-				buffer.WriteString(split)
-			}
-			buffer.WriteRune(r)
-			beforeUpper = true
-			continueUpper++
-		} else {
-			buffer.WriteRune(unicode.ToUpper(r))
-			beforeUpper = false
-			continueUpper = 0
-		}
-	}
-	return buffer.String()
+func ToCamelCase() string {
+	result1 := stringy.New("whs_id").SnakeCase()
+	return result1.CamelCase()
+
 }
 
 func genReqAndResp(f *Function) *API {
@@ -2148,4 +2344,12 @@ func TestName2(t *testing.T) {
 func add11(aa []string) []string {
 	aa = append(aa, "11")
 	return aa
+}
+
+func TestName1(t *testing.T) {
+	result := stringy.New("whsID").CamelCase()
+	fmt.Println(result) // HelloManHowAreYou
+	result1 := stringy.New("whs_id").SnakeCase()
+	fmt.Println(result1.CamelCase()) // HelloManHowAreYou
+
 }
