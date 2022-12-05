@@ -88,6 +88,9 @@ func parsePackageFullPath(path, folder string) (*Package, error) {
 	e = filepath.Walk(
 		folder,
 		func(path string, f os.FileInfo, _ error) error {
+			if strings.Contains(f.Name(), "proxy_handler") || strings.Contains(f.Name(), "proxy_main") {
+				return nil
+			}
 			data, err := getGoFileContent(path, folder, f)
 			if err != nil || data == "" {
 				return err

@@ -49,10 +49,20 @@ func TestPackage(t *testing.T) {
 }
 
 type CodeGenConf struct {
-	genTplFile           bool
-	genProxyWMSAPICode   bool
-	genWMSBasicV2APICode bool
-	genSrcProxyCodeFile  bool
+	genTplFile              bool
+	genProxyWMSBasicAPICode bool
+	genWMSBasicV2APICode    bool
+	genSrcProxyCodeFile     bool
+	name                    string
+	srcBase                 string
+	pbBase                  string
+	pbSrcBase               string
+	basicV2APICodeBase      string
+	basicV2APIPkg           string
+	basicV2ViewType         string
+	codeBase                string
+	proxyStructType         string
+	callMngMap              map[string]string
 }
 
 func TestBasicPkgs(t *testing.T) {
@@ -104,38 +114,27 @@ func TestBasicPkgs(t *testing.T) {
 
 func TestWMSV2(t *testing.T) {
 	packageMap := map[string]*Package{}
-	name := "apps/config/manager/msizetype"
-	codeBase := "/Users/yunfeizhu/Code/golang/wms-v2/apps/wmslib/wmsbasic"
-	srcBase := "/Users/yunfeizhu/Code/golang/wms-v2/apps/config/manager/msizetype"
-	//pbBase := "/Users/yunfeizhu/Code/golang/wms-protobuf/apps/basic/pbbasicv2"
-	pbBase := "/Users/yunfeizhu/Code/golang/wmsv2-basic-v2-protobuf/apps/basic/pbbasicv2"
-	pbSrcBase := "apps/basic/pbbasicv2/pbmsizetype"
-	basicV2APICodeBase := "/Users/yunfeizhu/Code/golang/wmsv2-basic-v2/apps/config/view/vsizetype"
-	basicV2APIPkg := "vsizetype"
-	basicV2ViewType := "SizeTypeView"
-
-	genConf := &CodeGenConf{
-		genTplFile:           false,
-		genProxyWMSAPICode:   false,
-		genWMSBasicV2APICode: true,
-		genSrcProxyCodeFile:  false,
-	}
-
-	err := ParsePackage2(packageMap, name, true)
+	//genConf := getMsizeConf()
+	genConf := getMHighbvalueConf()
+	//genConf.genTplFile = true
+	//genConf.genProxyWMSBasicAPICode = true
+	//genConf.genWMSBasicV2APICode = true
+	genConf.genSrcProxyCodeFile = true
+	err := ParsePackage2(packageMap, genConf.name, true)
 	if err != nil {
 		t.Error(err.Error())
 	}
-	p := packageMap[name]
+	p := packageMap[genConf.name]
 	pcode := parsePCode(p)
 
-	err = parsePbStructs(pbSrcBase, pcode, packageMap)
+	err = parsePbStructs(genConf.pbSrcBase, pcode, packageMap)
 	if err != nil {
 		t.Error(err.Error())
 	}
 
 	//tpl
 	if genConf.genTplFile {
-		err = genProxyAPIPbTpl(pbBase, pcode, packageMap)
+		err = genProxyAPIPbTpl(genConf.pbBase, pcode, packageMap)
 		if err != nil {
 			t.Error(err.Error())
 		}
@@ -143,16 +142,15 @@ func TestWMSV2(t *testing.T) {
 
 		pcode.ouStructTplDbsMaps["entity"] = append(pcode.ouStructTplDbsMaps["entity"], extLines...)
 
-		err = genTplFile(pbBase, pcode)
+		err = genTplFile(genConf.pbBase, pcode)
 		if err != nil {
 			t.Error(err.Error())
 		}
 	}
 
-	if genConf.genProxyWMSAPICode {
+	if genConf.genProxyWMSBasicAPICode {
 		//wmsbasic api
-		pbPkg := packageMap[pbSrcBase]
-		err = genProxyAPICodeFile(codeBase, pbPkg, pcode)
+		err = genProxyAPICodeFile(genConf.codeBase, genConf.pbSrcBase, packageMap, pcode)
 		if err != nil {
 			t.Error(err.Error())
 		}
@@ -160,15 +158,15 @@ func TestWMSV2(t *testing.T) {
 
 	if genConf.genWMSBasicV2APICode {
 		//wmsbasic api
-		pbPkg := packageMap[pbSrcBase]
-		err = genBasicV2APICodeFile(basicV2APIPkg, basicV2ViewType, basicV2APICodeBase, pbPkg, pcode)
+		pbPkg := packageMap[genConf.pbSrcBase]
+		err = genBasicV2APICodeFile(genConf.basicV2APIPkg, genConf.basicV2ViewType, genConf.basicV2APICodeBase, pbPkg, pcode, packageMap)
 		if err != nil {
 			t.Error(err.Error())
 		}
 	}
 
 	if genConf.genSrcProxyCodeFile {
-		err = genSrcProxyCodeFile(srcBase, pcode)
+		err = genSrcProxyCodeFile(genConf, pcode)
 		if err != nil {
 			t.Error(err.Error())
 		}
@@ -178,6 +176,48 @@ func TestWMSV2(t *testing.T) {
 	//genWMSV2ProxyTestAPI(p)
 	//genBasicAPI(p)
 
+}
+
+func getMsizeConf() *CodeGenConf {
+	var genConf = &CodeGenConf{
+		genTplFile:              false,
+		genProxyWMSBasicAPICode: false,
+		genWMSBasicV2APICode:    true,
+		genSrcProxyCodeFile:     false,
+		name:                    "apps/config/manager/msizetype",
+		srcBase:                 "/Users/yunfeizhu/Code/golang/wms-v2/apps/config/manager/msizetype",
+		codeBase:                "/Users/yunfeizhu/Code/golang/wms-v2/apps/wmslib/wmsbasic",
+		pbBase:                  "/Users/yunfeizhu/Code/golang/wmsv2-basic-v2-protobuf/apps/basic/pbbasicv2",
+		pbSrcBase:               "apps/basic/pbbasicv2/pbmsizetype",
+		basicV2APICodeBase:      "/Users/yunfeizhu/Code/golang/wmsv2-basic-v2/apps/config/view/vsizetype",
+		basicV2APIPkg:           "vsizetype",
+		basicV2ViewType:         "SizeTypeView",
+	}
+	return genConf
+}
+
+func getMHighbvalueConf() *CodeGenConf {
+	callMngMap := map[string]string{
+		"HighValueManager": "highValueManager",
+		//"TaskSizeTypeManager": "tasksizeTypeManger",
+	}
+	var genConf = &CodeGenConf{
+		genTplFile:              false,
+		genProxyWMSBasicAPICode: false,
+		genWMSBasicV2APICode:    false,
+		genSrcProxyCodeFile:     false,
+		name:                    "apps/config/manager/mhighvalue",
+		srcBase:                 "/Users/yunfeizhu/Code/golang/wms-v2/apps/config/manager/mhighvalue",
+		codeBase:                "/Users/yunfeizhu/Code/golang/wms-v2/apps/wmslib/wmsbasic",
+		pbBase:                  "/Users/yunfeizhu/Code/golang/wmsv2-basic-v2-protobuf/apps/basic/pbbasicv2",
+		pbSrcBase:               "apps/basic/pbbasicv2/pbmhighvalue",
+		basicV2APICodeBase:      "/Users/yunfeizhu/Code/golang/wmsv2-basic-v2/apps/config/view/vhighvalue",
+		basicV2APIPkg:           "vhighvalue",
+		basicV2ViewType:         "HighValueConfigView",
+		proxyStructType:         "HighValueManager",
+		callMngMap:              callMngMap,
+	}
+	return genConf
 }
 
 func parsePbStructs(pbSrcBase string, pcode *PCode, packageMap map[string]*Package) error {
@@ -199,8 +239,9 @@ func parsePbStructs(pbSrcBase string, pcode *PCode, packageMap map[string]*Packa
 	return nil
 }
 
-func genProxyAPICodeFile(base string, pbSrcPkg *Package, pcode *PCode) error {
+func genProxyAPICodeFile(base string, pbsrcBase string, packageMap map[string]*Package, pcode *PCode) error {
 	filePre := base + "/" + pcode.p.name
+	pbSrcPkg := packageMap[pbsrcBase]
 
 	packageHead := "package wmsbasic"
 	apiFiles := []string{packageHead}
@@ -230,7 +271,7 @@ func genProxyAPICodeFile(base string, pbSrcPkg *Package, pcode *PCode) error {
 		paramSignStr := basicapi.api.methodReqSign()
 		returnSign := basicapi.api.methodReturnSign()
 		head := fmt.Sprintf("%s%s (%s)%s {", receiverPrex, basicapi.api.Method, paramSignStr, returnSign)
-		body := basicapi.api.proxyBasicFuncBody(pbSrcPkg)
+		body := basicapi.api.proxyBasicFuncBody(pbSrcPkg, packageMap)
 
 		basicAPIProxyBodys += head + "\n" + body
 		println(head, "\n", body)
@@ -260,10 +301,14 @@ func genProxyAPICodeFile(base string, pbSrcPkg *Package, pcode *PCode) error {
 	return nil
 }
 
-func genBasicV2APICodeFile(pkgName string, basicV2ViewType string, base string, pbSrcPkg *Package, pcode *PCode) error {
+func genBasicV2APICodeFile(pkgName string, basicV2ViewType string, base string, pbSrcPkg *Package, pcode *PCode, packageMap map[string]*Package) error {
+	//callMngMap := map[string]string{
+	//	"SizeTypeManager":     "sizeTypeManger",
+	//	"TaskSizeTypeManager": "tasksizeTypeManger",
+	//}
 	callMngMap := map[string]string{
-		"SizeTypeManager":     "sizeTypeManger",
-		"TaskSizeTypeManager": "tasksizeTypeManger",
+		"HighValueManager": "highValueManager",
+		//"TaskSizeTypeManager": "tasksizeTypeManger",
 	}
 	module := pcode.p.name
 	filePre := base + "/" + module
@@ -272,7 +317,7 @@ func genBasicV2APICodeFile(pkgName string, basicV2ViewType string, base string, 
 	apiFiles := []string{packageHead}
 
 	var apis []string
-	apis = append(apis, fmt.Sprintf("func init%sProxyHandler(router *wrapper.BasicRouterWrapper, view *SizeTypeView){", upFirstChar(module)))
+	apis = append(apis, fmt.Sprintf("func init%sProxyHandler(router *wrapper.BasicRouterWrapper, view *HighValueConfigView){", upFirstChar(module)))
 	for _, basicapi := range pcode.basicAPIPbsMap {
 
 		routerMethod := basicapi.ProxyOpenapiMethod()
@@ -287,10 +332,10 @@ func genBasicV2APICodeFile(pkgName string, basicV2ViewType string, base string, 
 
 	apiFiles = append(apiFiles, apis...)
 
-	//err := ioutil.WriteFile(filePre+"_proxy_handler.go", []byte(strings.Join(apiFiles, "\n")), 0644)
-	//if err != nil {
-	//	return err
-	//}
+	err := ioutil.WriteFile(filePre+"_proxy_handler.go", []byte(strings.Join(apiFiles, "\n")), 0644)
+	if err != nil {
+		return err
+	}
 
 	basicAPIImps := []string{
 		packageHead,
@@ -324,7 +369,7 @@ func genBasicV2APICodeFile(pkgName string, basicV2ViewType string, base string, 
 		paramLines = append(paramLines, "")
 		funcs = append(funcs, paramLines...)
 
-		_, lines := basicapi.api.genBasicToWMSV2PreItemDefLines(pbSrcPkg)
+		_, lines := basicapi.api.genBasicToWMSV2PreItemDefLines(pbSrcPkg, packageMap)
 		funcs = append(funcs, lines...)
 
 		method := basicapi.api.Method
@@ -351,7 +396,7 @@ func genBasicV2APICodeFile(pkgName string, basicV2ViewType string, base string, 
 			originRet := fmt.Sprintf("ret%v", i+1)
 			val := originRet
 			var def string
-			pbType := toPbType(retType)
+			pbType := toPbType(retType, nil)
 			if strings.Contains(retType, "[]") {
 				val += "Items"
 				def = fmt.Sprintf("%v:=[]*pb%s.%s{}", val, module, pbType)
@@ -389,7 +434,7 @@ func genBasicV2APICodeFile(pkgName string, basicV2ViewType string, base string, 
 		basicAPIImps = append(basicAPIImps, funcs...)
 	}
 
-	err := ioutil.WriteFile(filePre+"_proxy_handler_impl.go", []byte(strings.Join(basicAPIImps, "\n")), 0644)
+	err = ioutil.WriteFile(filePre+"_proxy_handler_impl.go", []byte(strings.Join(basicAPIImps, "\n")), 0644)
 	if err != nil {
 		return err
 	}
@@ -404,7 +449,6 @@ type ItemType string
 func (i ItemType) IsInnerStruct() bool {
 	itemTypeStr := string(i)
 	return !strings.Contains(itemTypeStr, ".") &&
-		!strings.Contains(itemTypeStr, "[]") &&
 		!strings.EqualFold(itemTypeStr, "string") &&
 		!strings.EqualFold(itemTypeStr, "int64") &&
 		!strings.Contains(itemTypeStr, "map[string]")
@@ -432,11 +476,11 @@ func genProxyAPIPbTpl(base string, pcode *PCode, packageMap map[string]*Package)
 
 	//
 	//tplHead := "syntax = \"proto2\";"
-	innerCommonStructs := []string{}
-	for _, pb := range pcode.basicAPIPbs {
-		inStructs := pb.api.genInnerDefPkgStructs()
-		innerCommonStructs = append(innerCommonStructs, inStructs...)
-	}
+	//innerCommonStructs := []string{}
+	//for _, pb := range pcode.basicAPIPbs {
+	//	inStructs := pb.api.genInnerDefPkgStructs()
+	//	innerCommonStructs = append(innerCommonStructs, inStructs...)
+	//}
 
 	var pTpls []string
 	pTpls = append(pTpls, "syntax = \"proto2\";")
@@ -449,22 +493,22 @@ func genProxyAPIPbTpl(base string, pcode *PCode, packageMap map[string]*Package)
 
 	apiPbLinesMap := map[string][]string{}
 	for _, pb := range pcode.basicAPIPbs {
-		println("path: ", pb.Path)
-		println("method: ", pb.Method)
+		//println("path: ", pb.Path)
+		//println("method: ", pb.Method)
 		_, ok := apiPbLinesMap[pb.Path]
 		if ok {
 			continue
 		}
 
 		pTpls = append(pTpls, "// "+pb.api.genBasicAPIMethod())
-		tplsLines := genAPIPbTpls(pb)
+		tplsLines := genAPIPbTpls(pb, packageMap)
 		pTpls = append(pTpls, tplsLines...)
 
 		apiPbLinesMap[pb.Path] = append(apiPbLinesMap[pb.Path], tplsLines...)
 
 		//println(ToPrettyJSON(tplsLines))
-		println("")
-		println("")
+		//println("")
+		//println("")
 	}
 
 	pcode.apiPbLinesMap = apiPbLinesMap
@@ -590,7 +634,7 @@ func genTplFile(base string, pcode *PCode) error {
 }
 
 //request and resp
-func genAPIPbTpls(pb *BASICAPI) []string {
+func genAPIPbTpls(pb *BASICAPI, packageMap map[string]*Package) []string {
 	var lines []string
 	lines = append(lines, fmt.Sprintf("message %sRequest{", pb.api.Method))
 	for i, field := range pb.ReqFields {
@@ -598,7 +642,7 @@ func genAPIPbTpls(pb *BASICAPI) []string {
 			continue
 		}
 
-		item := fmt.Sprintf("%s %s %s = %d;", toPbOption(field.Type), toPbType(field.Type), ToSnakeCase(field.Alias), i)
+		item := fmt.Sprintf("%s %s %s = %d;", toPbOption(field.Type), toPbType(field.Type, packageMap), ToSnakeCase(field.Alias), i)
 		lines = append(lines, item)
 	}
 	lines = append(lines, "}")
@@ -613,7 +657,7 @@ func genAPIPbTpls(pb *BASICAPI) []string {
 			fieldType = strings.Split(field, ".")[1]
 		}
 		alias := fmt.Sprintf("Ret%d", i+1)
-		item := fmt.Sprintf("%s %s %s = %d;", toPbOption(field), toPbType(fieldType), ToSnakeCase(alias), i+1)
+		item := fmt.Sprintf("%s %s %s = %d;", toPbOption(field), toPbType(fieldType, nil), ToSnakeCase(alias), i+1)
 		lines = append(lines, item)
 	}
 	lines = append(lines, "}")
@@ -621,8 +665,41 @@ func genAPIPbTpls(pb *BASICAPI) []string {
 	return lines
 }
 
-func toPbType(fType string) string {
-	fieldType := fType
+func convertoBasicType(fType string, pkgMap map[string]*Package) string {
+	if !strings.Contains(fType, ".") {
+		return fType
+	}
+	if pkgMap == nil {
+		return fType
+	}
+
+	actualType := strings.ReplaceAll(strings.ReplaceAll(fType, "[]", ""), "*", "")
+
+	segs := strings.Split(actualType, ".")
+	typePackage := strings.ReplaceAll(segs[0], "*", "")
+	//只支持constant类型转换
+	if typePackage != "constant" {
+		return fType
+	}
+
+	for packagePath, p := range pkgMap {
+		pathSegs := strings.Split(packagePath, "/")
+		if pathSegs[len(pathSegs)-1] == typePackage {
+			ktype, err := p.FindType(segs[1])
+			if err == nil {
+				ctType := ktype.def.String()
+				println(fmt.Sprintf("keyType:%s convert to %s", fType, ctType))
+				return ctType
+			}
+		}
+	}
+
+	return fType
+
+}
+func toPbType(fType string, packageMap map[string]*Package) string {
+	fieldType := convertoBasicType(fType, packageMap)
+
 	if fieldType == "string" {
 		return "string"
 	}
@@ -756,6 +833,7 @@ func parseInnerStruct(uniqTypes []string, pcode *PCode, packageMap map[string]*P
 			inItemStrs = append(inItemStrs, string(itemType))
 			for _, file := range pcode.p.files {
 				itemTypeStr := strings.ReplaceAll(string(itemType), "*", "")
+				itemTypeStr = strings.ReplaceAll(string(itemTypeStr), "[]", "")
 				t, err := file.FindType(itemTypeStr)
 				if err != nil && strings.Contains(err.Error(), "is not found") {
 					//println(itemType, "is not found")
@@ -918,6 +996,7 @@ func toPbOption(t string) string {
 
 func (t JsonTag) toPbType() string {
 	fieldType := strings.ReplaceAll(t.KeyType, "*", "")
+	fieldType = strings.ReplaceAll(fieldType, "[]", "")
 
 	switch fieldType {
 	case "string":
@@ -983,10 +1062,11 @@ func uniqSlice(types ...string) []string {
 	return ret
 }
 
-func genSrcProxyCodeFile(srcPath string, pcode *PCode) error {
-	filePre := srcPath + "/" + pcode.p.name
+func genSrcProxyCodeFile(conf *CodeGenConf, pcode *PCode) error {
+	module := pcode.p.name
+	filePre := conf.srcBase + "/" + module
 
-	packageHead := fmt.Sprintf("package %s", pcode.p.name)
+	packageHead := fmt.Sprintf("package %s", module)
 	apiFiles := []string{packageHead}
 	apiFiles = append(apiFiles, pcode.srcPkgProxyFuncs...)
 	err := ioutil.WriteFile(filePre+"_proxy_handler.go", []byte(strings.Join(apiFiles, "\n")), 0644)
@@ -994,6 +1074,25 @@ func genSrcProxyCodeFile(srcPath string, pcode *PCode) error {
 		return err
 	}
 
+	//proxy main.go
+	proxyMain := []string{packageHead}
+
+	val := "const module = \"%s\"\n\nvar apiIdempotent = wmsbasicproxy.APIIdempotent()\n\nfunc getBasicHandler() wmsbasicproxy.BasicProxyHandler {\n\treturn wmsbasicproxy.GetModuleHandler(module)\n}\n"
+	proxyMain = append(proxyMain, fmt.Sprintf(val, module))
+	//
+	//type HighValueManagerProxy struct {
+	//	highValueManager         HighValueManager
+	//	highValueManagerProxyAPI wmsbasic.MhighvalueAPI
+	//}
+	proxyMain = append(proxyMain, fmt.Sprintf("type %sProxy struct{", conf.proxyStructType))
+	proxyMain = append(proxyMain, fmt.Sprintf("\t %s %s", lowerFirstChar(conf.proxyStructType), conf.proxyStructType))
+	proxyMain = append(proxyMain, fmt.Sprintf("\t %sProxyAPI wmsbasic.%sAPI", lowerFirstChar(conf.proxyStructType), upFirstChar(module)))
+	proxyMain = append(proxyMain, "}")
+
+	err = ioutil.WriteFile(filePre+"_proxy_main.go", []byte(strings.Join(proxyMain, "\n")), 0644)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -1373,7 +1472,8 @@ func (f ReqField) toDefBasicItemOrItems(module string) []string {
 		}
 	}
 
-	type1 := strings.ReplaceAll(field.Type, "*", "")
+	//eg 请求参数为:[]*msizetype.conditions
+	type1 := strings.ReplaceAll(strings.ReplaceAll(field.Type, "*", ""), "[]", "")
 	if isSturctItems(field.Type) {
 		params = append(params, fmt.Sprintf("%s=[]*%s.%s{}", field.formatFieldAlias(), module, type1))
 	} else {
@@ -1395,7 +1495,7 @@ func (f ReqField) toDefBasicItemOrItemsWithoutInit(module string) []string {
 		}
 	}
 
-	type1 := strings.ReplaceAll(field.Type, "*", "")
+	type1 := strings.ReplaceAll(strings.ReplaceAll(field.Type, "*", ""), "[]", "")
 	if isSturctItems(field.Type) {
 		params = append(params, fmt.Sprintf("var %s []*%s.%s", field.Alias, module, type1))
 	} else {
@@ -1434,7 +1534,7 @@ func (f ReqField) genDealCopyJsErrLines(isDefineJsErr *bool, api API) []string {
 }
 
 func (field *ReqField) toPbType() interface{} {
-	return toPbType(field.Type)
+	return toPbType(field.Type, nil)
 }
 
 func (api *API) proxyFuncBody() string {
@@ -1535,7 +1635,7 @@ func (api *API) proxyFuncBody() string {
 
 	return strings.Join(bodyStr, "\n")
 }
-func (api *API) proxyBasicFuncBody(pbPkg *Package) string {
+func (api *API) proxyBasicFuncBody(pbPkg *Package, packageMap map[string]*Package) string {
 
 	//module := api.Pkg.name
 	var bodyStr []string
@@ -1550,7 +1650,7 @@ func (api *API) proxyBasicFuncBody(pbPkg *Package) string {
 	bodyStr = append(bodyStr, "")
 
 	var params []string
-	isDefineJsErr, preDefLines := api.genWmsV2ToBasicPreItemDefLines()
+	isDefineJsErr, preDefLines := api.genWmsV2ToBasicPreItemDefLines(packageMap)
 	params = append(params, preDefLines...)
 
 	params = append(params, "\n// do requets")
@@ -1562,7 +1662,13 @@ func (api *API) proxyBasicFuncBody(pbPkg *Package) string {
 		pbType := api.parsePbFieldType(pbPkg, field)
 
 		//item := fmt.Sprintf("\t%s:%s,", pbType, assignToPbType(field))
-		item := fmt.Sprintf("\t%s:%s,", pbType, field.assignToPbType())
+		var item string
+		if api.Method == "SearchHighValueByHvIds" && field.Alias == "isGlobal" {
+			item = fmt.Sprintf("\t%s:%s,", pbType, "convert.Int64(isGlobal)")
+		} else {
+			item = fmt.Sprintf("\t%s:%s,", pbType, field.assignToPbType())
+		}
+
 		params = append(params, item)
 	}
 	params = append(params, "}")
@@ -1670,7 +1776,7 @@ func (api *API) parsePbFieldType(pbPkg *Package, field *ReqField) string {
 	return pbType
 }
 
-func (api *API) genBasicToWMSV2PreItemDefLines(pbPkg *Package) (bool, []string) {
+func (api *API) genBasicToWMSV2PreItemDefLines(pbPkg *Package, packageMap map[string]*Package) (bool, []string) {
 	module := api.Pkg.name
 	isDefineJsErr := false
 	params := []string{}
@@ -1686,7 +1792,7 @@ func (api *API) genBasicToWMSV2PreItemDefLines(pbPkg *Package) (bool, []string) 
 			continue
 		}
 
-		if strings.Contains(toPbType(field.Type), "Item") && field.Type != "*paginator.PageIn" {
+		if strings.Contains(toPbType(field.Type, packageMap), "Item") && field.Type != "*paginator.PageIn" {
 			lines := []string{}
 			initLines := field.toDefBasicItemOrItemsWithoutInit(module)
 			lines = append(lines, initLines...)
@@ -1729,11 +1835,23 @@ func (api *API) genBasicToWMSV2PreItemDefLines(pbPkg *Package) (bool, []string) 
 			params = append(params, item)
 		}
 
+		if strings.Contains(field.Type, "constant.") {
+			var item string
+			if strings.Contains(field.Type, "[]") {
+				params = append(params, "%s:=req.Get%s")
+				item = fmt.Sprintf("var \t%s = %s", field.aliasDef(), upFirstChar(field.Alias))
+			} else {
+				item = fmt.Sprintf("var \t%s =req.Get%s()", field.Alias, upFirstChar(field.Alias))
+			}
+			params = append(params, item)
+
+		}
+
 	}
 	return isDefineJsErr, params
 }
 
-func (api *API) genWmsV2ToBasicPreItemDefLines() (bool, []string) {
+func (api *API) genWmsV2ToBasicPreItemDefLines(packageMap map[string]*Package) (bool, []string) {
 	module := api.Pkg.name
 	isDefineJsErr := false
 	params := []string{}
@@ -1744,12 +1862,22 @@ func (api *API) genWmsV2ToBasicPreItemDefLines() (bool, []string) {
 
 		if field.isUpdateMap() {
 			var lines []string
-			lines = api.convertToUpdateMapLine(field)
+			lines = api.convertToMapUpdateItemsLine(field)
 			params = append(params, lines...)
 			continue
 		}
 
-		if strings.Contains(toPbType(field.Type), "Item") && field.Type != "*paginator.PageIn" {
+		if strings.Contains(toPbType(field.Type, packageMap), "Item") && field.Type != "*paginator.PageIn" {
+			lines := field.toDefItemOrItems(module)
+
+			errLines := field.genDealCopyJsErrLines(&isDefineJsErr, *api)
+			lines = append(lines, errLines...)
+			params = append(params, lines...)
+		}
+
+		//兼容 constant枚举值
+		//sizeTypeList []constant.TaskSizeType
+		if strings.Contains(field.Type, "[]") && strings.Contains(field.Type, "constant.") {
 			lines := field.toDefItemOrItems(module)
 
 			errLines := field.genDealCopyJsErrLines(&isDefineJsErr, *api)
@@ -1768,9 +1896,11 @@ func (api *API) genWmsV2ToBasicPreItemDefLines() (bool, []string) {
 }
 
 func (api *API) convertToMapUpdateItemsLine(field *ReqField) []string {
+	module := api.Pkg.name
 	var params []string
+	//if module != "msizetype" {
 	retItemVars := api.apiRets()
-	params = append(params, fmt.Sprintf("mapItemLists,err := convertToMapUpdateItems(%s)", field.Alias))
+	params = append(params, fmt.Sprintf("mapItems,err := convertToMapUpdateItems(%s)", field.Alias))
 
 	params = append(params, "if err != nil {")
 	if len(retItemVars) > 1 {
@@ -1780,13 +1910,38 @@ func (api *API) convertToMapUpdateItemsLine(field *ReqField) []string {
 		params = append(params, "\t\treturn  wmserror.NewError(constant.ErrBadRequest, \"update map convert to item list err:%v\", err.Error())")
 	}
 	params = append(params, "}")
+	params = append(params, fmt.Sprintf("mapItemLists := []*pb%s.MapItem{}", module))
+	params = append(params, "cpErr := copier.Copy(mapItems, &mapItemLists)")
+	params = append(params, "if cpErr != nil {")
+	if len(retItemVars) > 1 {
+		errMsg := "\t\treturn  %s, wmserror.NewError(constant.ErrBadRequest, \"update map convert to item list err:%v\", cpErr.Error())"
+		params = append(params, fmt.Sprintf(errMsg, strings.Join(retItemVars[0:len(retItemVars)-1], ","), ""))
+	} else {
+		params = append(params, "\t\treturn  wmserror.NewError(constant.ErrBadRequest, \"update map convert to item list err:%v\", cpErr.Error())")
+	}
+
+	params = append(params, "}")
+	//} else {
+	//
+	//	retItemVars := api.apiRets()
+	//	params = append(params, fmt.Sprintf("mapItemLists,err := convertToMapUpdateItems(%s)", field.Alias))
+	//
+	//	params = append(params, "if err != nil {")
+	//	if len(retItemVars) > 1 {
+	//		errMsg := "\t\treturn  %s, wmserror.NewError(constant.ErrBadRequest, \"update map convert to item list err:%v\", err.Error())"
+	//		params = append(params, fmt.Sprintf(errMsg, strings.Join(retItemVars[0:len(retItemVars)-1], ","), ""))
+	//	} else {
+	//		params = append(params, "\t\treturn  wmserror.NewError(constant.ErrBadRequest, \"update map convert to item list err:%v\", err.Error())")
+	//	}
+	//	params = append(params, "}")
+	//}
 	return params
 }
 
 func (api *API) convertToUpdateMapLine(field *ReqField) []string {
 	var params []string
-	params = append(params, fmt.Sprintf("%s,err := pbconvert.ConvertUpdateMaps(req.GetUpdateMap())", field.Alias))
-
+	//兼容非updateMap
+	params = append(params, fmt.Sprintf("%s,err := pbconvert.ConvertUpdateMaps(req.Get%s())", field.Alias, upFirstChar(field.Alias)))
 	params = append(params, api.viewHandlerErr())
 	api.genBasicV2Err = true
 	return params
@@ -1943,12 +2098,18 @@ func (api *API) proxyFuncBody2() string {
 
 			reqStr := fmt.Sprintf("%sReq", field.Alias)
 			//req := &wmsbasic.SearchCellSizeConditionItem{}
+			originType := field.Type
 			reqItemType := field.Type
 			if strings.Contains(reqItemType, "*") && !strings.Contains(reqItemType, "[") {
 				reqItemType = strings.Split(reqItemType, "*")[1]
 			}
+			if isSturctItems(originType) {
+				fType := strings.ReplaceAll(originType, "[]*", "")
+				copyReqs = append(copyReqs, fmt.Sprintf("%s := []*wmsbasic.%sItem{}", reqStr, fType))
+			} else {
+				copyReqs = append(copyReqs, fmt.Sprintf("%s := &wmsbasic.%sItem{}", reqStr, reqItemType))
+			}
 
-			copyReqs = append(copyReqs, fmt.Sprintf("%s := &wmsbasic.%sItem{}", reqStr, reqItemType))
 			//ctErr := copier.Copy(condition, &req)
 			//todo 是否是指针
 			copyReqs = append(copyReqs, fmt.Sprintf("ctErr := copier.Copy(%s, %s)", field.Alias, reqStr))
@@ -2134,7 +2295,9 @@ func (api *API) genInnerDefPkgStructs() []string {
 
 		//当前包下的struct
 		if !strings.Contains(fieldType, ".") && fieldType != "string" && fieldType != "int64" {
-			innerStructset.Add(strings.ReplaceAll(fieldType, "*", ""))
+			item := strings.ReplaceAll(fieldType, "*", "")
+			item = strings.ReplaceAll(item, "[]", "")
+			innerStructset.Add(item)
 		}
 	}
 	var items []string
@@ -2172,6 +2335,8 @@ func (api *API) genOuterDefPkgStructs() []string {
 	return items
 }
 func (api *API) genInnerPkgStructDef(fieldType string) string {
+	//兼容[]*sss
+	fieldType = strings.ReplaceAll(fieldType, "[]", "")
 	var def = []string{}
 	defHead := fmt.Sprintf("type %sItem struct{", fieldType)
 	def = append(def, defHead)
@@ -2199,13 +2364,17 @@ func (api *API) methodReqSign() string {
 		if isNeedRedefineStruct {
 			curFieldType = curFieldType + "Item"
 		}
+		//兼容type []HighValueCategoryUpdateConditionItem
+		//curFieldType = strings.ReplaceAll(curFieldType, "[]", "")
 		params = append(params, fmt.Sprintf("%s %s", field.Alias, curFieldType))
 	}
 	return strings.Join(params, ",")
 }
 
 func (api *API) isNeedRedefineStruct(field *ReqField) bool {
-	isNeedRedefineStruct := !strings.Contains(field.Type, ".") &&
+	fType := strings.ReplaceAll(field.Type, "[]", "")
+
+	isNeedRedefineStruct := !strings.Contains(fType, ".") &&
 		!strings.Contains(field.Type, "map[string]") &&
 		field.Type != "context.Context" &&
 		field.Type != "string" &&
