@@ -8,6 +8,7 @@ import (
 	"github.com/gobeam/stringy"
 	"io/ioutil"
 	"regexp"
+	"sort"
 	"strings"
 	"testing"
 	"unicode"
@@ -63,6 +64,8 @@ type CodeGenConf struct {
 	codeBase                string
 	proxyStructType         string
 	callMngMap              map[string]string
+	targetStruct            string
+	targetStructs           []string
 }
 
 func TestBasicPkgs(t *testing.T) {
@@ -115,17 +118,19 @@ func TestBasicPkgs(t *testing.T) {
 func TestWMSV2(t *testing.T) {
 	packageMap := map[string]*Package{}
 	//genConf := getMsizeConf()
-	genConf := getMHighbvalueConf()
+	//genConf := getMHighbvalueConf()
+	genConf := getMlifecycleConf()
 	//genConf.genTplFile = true
 	//genConf.genProxyWMSBasicAPICode = true
-	//genConf.genWMSBasicV2APICode = true
-	genConf.genSrcProxyCodeFile = true
+	genConf.genWMSBasicV2APICode = true
+	//genConf.genSrcProxyCodeFile = true
 	err := ParsePackage2(packageMap, genConf.name, true)
 	if err != nil {
 		t.Error(err.Error())
 	}
 	p := packageMap[genConf.name]
-	pcode := parsePCode(p)
+	pcode := parsePCode(p, genConf)
+	pcode.conf = genConf
 
 	err = parsePbStructs(genConf.pbSrcBase, pcode, packageMap)
 	if err != nil {
@@ -157,7 +162,7 @@ func TestWMSV2(t *testing.T) {
 	}
 
 	if genConf.genWMSBasicV2APICode {
-		//wmsbasic api
+		//wmsbasicv2 api
 		pbPkg := packageMap[genConf.pbSrcBase]
 		err = genBasicV2APICodeFile(genConf.basicV2APIPkg, genConf.basicV2ViewType, genConf.basicV2APICodeBase, pbPkg, pcode, packageMap)
 		if err != nil {
@@ -216,6 +221,33 @@ func getMHighbvalueConf() *CodeGenConf {
 		basicV2ViewType:         "HighValueConfigView",
 		proxyStructType:         "HighValueManager",
 		callMngMap:              callMngMap,
+	}
+	return genConf
+}
+func getMlifecycleConf() *CodeGenConf {
+	callMngMap := map[string]string{
+		"LifeCycleRuleManager": "lifeCycleRuleConfigMng",
+		//"TaskSizeTypeManager": "tasksizeTypeManger",
+	}
+	var genConf = &CodeGenConf{
+		genTplFile:              false,
+		genProxyWMSBasicAPICode: false,
+		genWMSBasicV2APICode:    false,
+		genSrcProxyCodeFile:     false,
+		name:                    "apps/config/manager/mlifecyclerule",
+		srcBase:                 "/Users/yunfeizhu/Code/golang/wms-v2/apps/config/manager/mlifecyclerule",
+		codeBase:                "/Users/yunfeizhu/Code/golang/wms-v2/apps/wmslib/wmsbasic",
+		pbBase:                  "/Users/yunfeizhu/Code/golang/wmsv2-basic-v2-protobuf/apps/basic/pbbasicv2",
+		pbSrcBase:               "apps/basic/pbbasicv2/pbmlifecyclerule",
+		//wmsv2-basic-v2
+		targetStruct:  "LifeCycleRuleManager",
+		targetStructs: []string{"LifeCycleRuleManager"},
+
+		basicV2APICodeBase: "/Users/yunfeizhu/Code/golang/wmsv2-basic-v2/apps/config/view/vlifecyclerule",
+		basicV2APIPkg:      "vlifecyclerule",
+		basicV2ViewType:    "LifeCycleRuleConfigView",
+		proxyStructType:    "lifeCycleRuleConfigMng",
+		callMngMap:         callMngMap,
 	}
 	return genConf
 }
@@ -306,10 +338,11 @@ func genBasicV2APICodeFile(pkgName string, basicV2ViewType string, base string, 
 	//	"SizeTypeManager":     "sizeTypeManger",
 	//	"TaskSizeTypeManager": "tasksizeTypeManger",
 	//}
-	callMngMap := map[string]string{
-		"HighValueManager": "highValueManager",
-		//"TaskSizeTypeManager": "tasksizeTypeManger",
-	}
+	//callMngMap := map[string]string{
+	//	"HighValueManager": "highValueManager",
+	//	//"TaskSizeTypeManager": "tasksizeTypeManger",
+	//}
+	callMngMap := pcode.conf.callMngMap
 	module := pcode.p.name
 	filePre := base + "/" + module
 
@@ -317,8 +350,16 @@ func genBasicV2APICodeFile(pkgName string, basicV2ViewType string, base string, 
 	apiFiles := []string{packageHead}
 
 	var apis []string
-	apis = append(apis, fmt.Sprintf("func init%sProxyHandler(router *wrapper.BasicRouterWrapper, view *HighValueConfigView){", upFirstChar(module)))
+	apis = append(apis, fmt.Sprintf("func init%sProxyHandler(router *wrapper.BasicRouterWrapper, view *%s){", upFirstChar(module), pcode.conf.basicV2ViewType))
+
+	sortedAPIList := []*BASICAPI{}
 	for _, basicapi := range pcode.basicAPIPbsMap {
+		sortedAPIList = append(sortedAPIList, basicapi)
+	}
+	sort.Slice(sortedAPIList, func(i, j int) bool {
+		return sortedAPIList[i].api.Method < sortedAPIList[j].api.Method
+	})
+	for _, basicapi := range sortedAPIList {
 
 		routerMethod := basicapi.ProxyOpenapiMethod()
 		apiPath := basicapi.Path
@@ -340,7 +381,7 @@ func genBasicV2APICodeFile(pkgName string, basicV2ViewType string, base string, 
 	basicAPIImps := []string{
 		packageHead,
 	}
-	for _, basicapi := range pcode.basicAPIPbsMap {
+	for _, basicapi := range sortedAPIList {
 		receiver := basicapi.api.ReceiverName
 		curReceiver := callMngMap[receiver]
 		if strings.Contains(receiver, "Proxy") {
@@ -520,17 +561,15 @@ func genProxyAPIPbTpl(base string, pcode *PCode, packageMap map[string]*Package)
 	//	println(err.Error())
 	//}
 
-	types := []string{}
-	for _, pb := range pcode.basicAPIPbs {
-		for _, field := range pb.ReqFields {
-			types = append(types, field.Type)
-		}
-	}
-
-	uniqTypes := uniqSlice(types...)
-	println(ToPrettyJSON(uniqTypes))
-	pcode.innerStructTypes = uniqTypes
-	inItemStrs, inItemTagsMap := parseInnerStruct(uniqTypes, pcode, packageMap)
+	//types := pcode.innerStructTypes
+	//for _, pb := range pcode.basicAPIPbs {
+	//	for _, field := range pb.ReqFields {
+	//		types = append(types, field.Type)
+	//	}
+	//}
+	//
+	//pcode.innerStructTypes = uniqTypes
+	inItemStrs, inItemTagsMap := parseInnerStruct(pcode.innerStructTypes, pcode, packageMap)
 
 	inStructTplDbs := genTplByJsonTagsMap(inItemTagsMap)
 	inStructTagTypes := getStructTypeSet(inItemTagsMap)
@@ -568,19 +607,23 @@ func genProxyAPIPbTpl(base string, pcode *PCode, packageMap map[string]*Package)
 	println("out struct types json tags:\n", ToPrettyJSON(ouItemTagsMap))
 	//println(strings.Join(ouStructTplDbs, "\n"))
 
+	var outerCommonTpls []string
+	outerCommonTpls = append(outerCommonTpls, "syntax = \"proto2\";")
+	outerCommonTpls = append(outerCommonTpls, fmt.Sprintf("option go_package = \"git.garena.com/shopee/bg-logistics/tianlu/wmsv2-basic-v2-protobuf/apps/basic/pbbasicv2/%s\";", pkgPbDir))
+	outerCommonTpls = append(outerCommonTpls, fmt.Sprintf("package %s;", pkgPbDir))
 	outPkgPbLinesMap := map[string][]string{}
 	for pName, items := range ouStructTplDbsMaps {
 		var outerTpls []string
-		outerTpls = append(outerTpls, "syntax = \"proto2\";")
-		outerTpls = append(outerTpls, fmt.Sprintf("option go_package = \"git.garena.com/shopee/bg-logistics/tianlu/wmsv2-basic-v2-protobuf/apps/basic/pbbasicv2/%s\";", pkgPbDir))
-		outerTpls = append(outerTpls, fmt.Sprintf("package %s;", pkgPbDir))
+		outerTpls = append(outerTpls, outerCommonTpls...)
 		outerTpls = append(outerTpls, "")
 		outerTpls = append(outerTpls, "")
 		outerTpls = append(outerTpls, "")
 		outerTpls = append(outerTpls, items...)
 
 		outPkgPbLinesMap[pName] = outerTpls
-
+	}
+	if len(outPkgPbLinesMap["entity"]) == 0 {
+		outPkgPbLinesMap["entity"] = outerCommonTpls
 	}
 	pcode.ouStructTplDbsMaps = outPkgPbLinesMap
 
@@ -703,6 +746,9 @@ func toPbType(fType string, packageMap map[string]*Package) string {
 	if fieldType == "string" {
 		return "string"
 	}
+	if fieldType == "bool" {
+		return "bool"
+	}
 	if fieldType == "[]string" {
 		return "string"
 	}
@@ -821,6 +867,12 @@ func isSturctItems(fieldType string) bool {
 		!isBasicType
 }
 
+func isInPkgSturctItem(fieldType string) bool {
+	realType := strings.ReplaceAll(strings.ReplaceAll(fieldType, "[]", ""), "*", "")
+
+	return !isNormalType(realType) && !strings.Contains(realType, ".")
+}
+
 func parseInnerStruct(uniqTypes []string, pcode *PCode, packageMap map[string]*Package) ([]string, map[string][]*JsonTag) {
 	var itemTypes []ItemType
 	for _, uniqType := range uniqTypes {
@@ -836,7 +888,7 @@ func parseInnerStruct(uniqTypes []string, pcode *PCode, packageMap map[string]*P
 				itemTypeStr = strings.ReplaceAll(string(itemTypeStr), "[]", "")
 				t, err := file.FindType(itemTypeStr)
 				if err != nil && strings.Contains(err.Error(), "is not found") {
-					//println(itemType, "is not found")
+					println(itemType, "is not found")
 					continue
 				}
 				//for _, field := range t.def.(*StructType).Fields() {
@@ -1004,7 +1056,7 @@ func (t JsonTag) toPbType() string {
 	case "int64":
 		return "int64"
 	default:
-		return fieldType
+		return fieldType + "Item"
 	}
 }
 
@@ -1084,9 +1136,9 @@ func genSrcProxyCodeFile(conf *CodeGenConf, pcode *PCode) error {
 	//	highValueManager         HighValueManager
 	//	highValueManagerProxyAPI wmsbasic.MhighvalueAPI
 	//}
-	proxyMain = append(proxyMain, fmt.Sprintf("type %sProxy struct{", conf.proxyStructType))
-	proxyMain = append(proxyMain, fmt.Sprintf("\t %s %s", lowerFirstChar(conf.proxyStructType), conf.proxyStructType))
-	proxyMain = append(proxyMain, fmt.Sprintf("\t %sProxyAPI wmsbasic.%sAPI", lowerFirstChar(conf.proxyStructType), upFirstChar(module)))
+	proxyMain = append(proxyMain, fmt.Sprintf("type %sProxy struct{", upFirstChar(conf.targetStruct)))
+	proxyMain = append(proxyMain, fmt.Sprintf("\t %s %s", lowerFirstChar(conf.targetStruct), conf.targetStruct))
+	proxyMain = append(proxyMain, fmt.Sprintf("\t %sProxyAPI wmsbasic.%sAPI", lowerFirstChar(conf.targetStruct), upFirstChar(module)))
 	proxyMain = append(proxyMain, "}")
 
 	err = ioutil.WriteFile(filePre+"_proxy_main.go", []byte(strings.Join(proxyMain, "\n")), 0644)
@@ -1131,6 +1183,7 @@ type PCode struct {
 
 	//outer struct
 	ouStructTplDbsMaps map[string][]string
+	conf               *CodeGenConf
 }
 
 func (pcode PCode) genProxyAPIStructDefAndConstruct() string {
@@ -1158,7 +1211,7 @@ func (pcode PCode) genProxyAPIStructDefAndConstruct() string {
 
 }
 
-func parsePCode(p *Package) *PCode {
+func parsePCode(p *Package, conf *CodeGenConf) *PCode {
 	code := &PCode{
 		p: p,
 	}
@@ -1175,9 +1228,21 @@ func parsePCode(p *Package) *PCode {
 	var basicAPIsMap = map[SrcEndPoint]string{}
 	var basicAPIReqsMap = map[SrcEndPoint]string{}
 	var basicAPIPbsMap = map[SrcEndPoint]*BASICAPI{}
+	//sort
+	sort.Slice(apis, func(i, j int) bool {
+		return apis[i].Method < apis[j].Method
+	})
+
 	for _, api := range apis {
 		if !isExported(api.Method) {
 			//println("method is not exported: ", api.Method)
+			continue
+		}
+		//isNeedHandler := isNeedToHandler(api, conf)
+		//if !isNeedHandler {
+		if !api.isNeedHandler(conf) {
+			receiverName := api.ReceiverName
+			println(fmt.Sprintf("receiverName %s is no need to handler", receiverName))
 			continue
 		}
 		endpoint := NewSrcEndPoint(api.Pkg.name, api.Method)
@@ -1211,9 +1276,20 @@ func parsePCode(p *Package) *PCode {
 	//prttryStr("basic api ", strings.Join(basicAPIs, "\n\n"))
 	//prttryStr("basic api req", strings.Join(basicAPIReqs, "\n\n"))
 	var outStructTypeList []string
+	var inStructTypeList []string
 	for _, i := range inStructSet.Values() {
-		println(p.name, " inner struct", i.(string))
+		ftype := i.(string)
+		if isNormalType(ftype) || strings.Contains(ftype, ".") {
+			continue
+		}
+
+		inStructTypeList = append(inStructTypeList, ftype)
+		println(p.name, " inner struct", ftype)
 	}
+	code.innerStructTypes = inStructTypeList
+
+	checkNeedAddJsonTag(p, inStructTypeList)
+
 	for _, i := range outStructSet.Values() {
 		//println(p.name, " out struct", i.(string))
 		outStructTypeList = append(outStructTypeList, i.(string))
@@ -1222,6 +1298,28 @@ func parsePCode(p *Package) *PCode {
 
 	return code
 
+}
+
+func checkNeedAddJsonTag(p *Package, inStructTypeList []string) {
+	needAddJsonTagTypes := []string{}
+	for _, ftype := range inStructTypeList {
+		t, err := p.FindType(ftype)
+		if err != nil && strings.Contains(err.Error(), "is not found") {
+			continue
+		}
+		if objType, ok := t.def.(*StructType); ok {
+			for _, field := range objType.fields {
+
+				key := strings.Split(field.tags.Get("json"), ",")[0]
+				if key == "" {
+					needAddJsonTagTypes = append(needAddJsonTagTypes, ftype)
+				}
+			}
+		}
+
+	}
+
+	println("need add json tag structs:", ToPrettyJSON(uniqSlice(needAddJsonTagTypes...)))
 }
 
 func pReqItemStrs(apis []*API) []string {
@@ -1299,6 +1397,7 @@ func prttryStr(label string, body string) {
 }
 
 type API struct {
+	//apps/config/manager/mlifecyclerule
 	Path    string
 	Package string
 	// SearchAllTaskSizeType
@@ -1315,8 +1414,9 @@ type API struct {
 }
 
 type BASICAPI struct {
-	Path        string
-	Package     string
+	Path    string
+	Package string
+	//POST 还是GET
 	Method      string
 	Req         map[string]string
 	ReqFields   []*ReqField
@@ -1477,7 +1577,9 @@ func (f ReqField) toDefBasicItemOrItems(module string) []string {
 	if isSturctItems(field.Type) {
 		params = append(params, fmt.Sprintf("%s=[]*%s.%s{}", field.formatFieldAlias(), module, type1))
 	} else {
-		params = append(params, fmt.Sprintf("%s=&%s.%s{}", field.formatFieldAlias(), module, type1))
+		if f.isPointer() {
+			params = append(params, fmt.Sprintf("%s=&%s.%s{}", field.formatFieldAlias(), module, type1))
+		}
 	}
 	return params
 
@@ -1499,7 +1601,11 @@ func (f ReqField) toDefBasicItemOrItemsWithoutInit(module string) []string {
 	if isSturctItems(field.Type) {
 		params = append(params, fmt.Sprintf("var %s []*%s.%s", field.Alias, module, type1))
 	} else {
-		params = append(params, fmt.Sprintf("var %s *%s.%s", field.Alias, module, type1))
+		if f.isPointer() {
+			params = append(params, fmt.Sprintf("var %s *%s.%s", field.Alias, module, type1))
+		} else {
+			params = append(params, fmt.Sprintf("var %s %s.%s", field.Alias, module, type1))
+		}
 	}
 	return params
 
@@ -1537,104 +1643,10 @@ func (field *ReqField) toPbType() interface{} {
 	return toPbType(field.Type, nil)
 }
 
-func (api *API) proxyFuncBody() string {
-	var bodyStr []string
-	bodyStr = append(bodyStr, api.FuncSignStr+"{")
-
-	//var ret1 []*entity.CellSizeType
-	//var ret2 int64
-	//var ret3 *wmserror.WMSError
-	for i, ret := range api.Resp {
-		v := fmt.Sprintf("var %s %s", fmt.Sprintf("ret%d", i+1), ret)
-		bodyStr = append(bodyStr, v)
-	}
-
-	//
-	//originHandler := func(ctx context.Context) {
-	//	ret1, ret2, ret3 = c.origin.SearchCellSizeList(ctx, whsID)
-	//}
-	retParams := []string{}
-	for i := range api.Resp {
-		retParams = append(retParams, fmt.Sprintf("ret%d ", i+1))
-	}
-	rets := strings.Join(retParams, ", ")
-
-	bodyStr = append(bodyStr, "\toriginHandler := func(ctx context.Context) {")
-	params := []string{}
-	for _, field := range api.ReqFields {
-		params = append(params, field.Alias)
-	}
-	paramsStr := strings.Join(params, ", ")
-
-	callOriginal := fmt.Sprintf("= %s.%s.%s(%s)", api.ReceiverAlias, lowerFirstChar(api.ReceiverName), api.Method, paramsStr)
-	bodyStr = append(bodyStr, rets+callOriginal)
-	bodyStr = append(bodyStr, "\t}")
-
-	//proxyHandler := func(ctx context.Context) *wmserror.WMSError {
-	//	req := &pbmsizetype.SearchCellSizeListReq{
-	//		WhsID: whsID,
-	//	}
-
-	bodyStr = append(bodyStr, "proxyHandler := func(ctx context.Context) *wmserror.WMSError {")
-	bodyStr = append(bodyStr, fmt.Sprintf("req := &pb%s.%sReq{", api.Package, api.Method))
-	var reqFieldsStr []string
-	for _, field := range api.ReqFields {
-		fieldParam := field.Alias
-		fieldType := upFirstChar(fieldParam)
-		reqFieldsStr = append(reqFieldsStr, fmt.Sprintf("\t%s:%s,", fieldType, fieldParam))
-	}
-	bodyStr = append(bodyStr, reqFieldsStr...)
-	bodyStr = append(bodyStr, "}")
-
-	//	apiResp, err := c.basicAPI.SearchCellSizeList(ctx, req)
-	//	if err != nil {
-	//		return err.Mark()
-	//	}
-	var callProxy string
-	if len(api.Resp) > 1 {
-		callProxy = fmt.Sprintf("apiResp, err := %s.basicAPI.%s(ctx, req)", api.ReceiverAlias, api.Method)
-	} else {
-		callProxy = fmt.Sprintf("err := %s.basicAPI.%s(ctx, req)", api.ReceiverAlias, api.Method)
-	}
-	bodyStr = append(bodyStr, callProxy)
-	bodyStr = append(bodyStr, "\tif err != nil {")
-	bodyStr = append(bodyStr, "\treturn err.Mark()")
-	bodyStr = append(bodyStr, "\t}")
-
-	//	ret1, ret2, ret3 = apiResp.GetRet1(), apiResp.GetRet2(), apiResp.GetRet3()
-	//	return nil
-	//}
-	proxyRets := []string{}
-	proxyRetParams := []string{}
-	for i := range api.Resp {
-		if i == len(api.Resp)-1 {
-			continue
-		}
-		proxyRets = append(proxyRets, fmt.Sprintf("apiResp.GetRet%d()", i))
-		proxyRetParams = append(proxyRetParams, fmt.Sprintf("ret%d", i))
-	}
-	if len(proxyRetParams) > 0 {
-		bodyStr = append(bodyStr, fmt.Sprintf("%s = %s", strings.Join(proxyRetParams, ", "), strings.Join(proxyRets, ", ")))
-	}
-	bodyStr = append(bodyStr, "return nil")
-	bodyStr = append(bodyStr, "}")
-
-	//
-	//endPoint := "SearchCellSizeList"
-	//doBasicHandler(ctx, endPoint, originHandler, proxyHandler)
-	//return ret1, ret2, ret3
-
-	bodyStr = append(bodyStr, fmt.Sprintf("endPoint := \"%s\"", api.Method))
-	if api.genBasicAPIMethod() == "GET" {
-		bodyStr = append(bodyStr, "getBasicHandler()(ctx, endPoint, originHandler, proxyHandler, apiIdempotent)")
-	} else {
-		bodyStr = append(bodyStr, "getBasicHandler()(ctx, endPoint, originHandler, proxyHandler)")
-	}
-	bodyStr = append(bodyStr, "return "+rets)
-	bodyStr = append(bodyStr, "}")
-
-	return strings.Join(bodyStr, "\n")
+func (field *ReqField) isPointer() bool {
+	return strings.Contains(field.Type, "*")
 }
+
 func (api *API) proxyBasicFuncBody(pbPkg *Package, packageMap map[string]*Package) string {
 
 	//module := api.Pkg.name
@@ -1761,6 +1773,17 @@ func (api *API) genNormalErrLines() []string {
 	bodyStr = append(bodyStr, "\t}")
 	return bodyStr
 }
+func (api *API) genCpErrLines() []string {
+	bodyStr := []string{}
+	if len(api.apiRets()) > 1 {
+		errMsg := "\t\treturn  %s, cpErr.Mark()"
+		bodyStr = append(bodyStr, fmt.Sprintf(errMsg, strings.Join(api.apiRets()[0:len(api.apiRets())-1], ",")))
+	} else {
+		bodyStr = append(bodyStr, "return cpErr.Mark()")
+	}
+	bodyStr = append(bodyStr, "\t}")
+	return bodyStr
+}
 
 //如：whsId对应pb可能是：WhsID
 func (api *API) parsePbFieldType(pbPkg *Package, field *ReqField) string {
@@ -1808,7 +1831,11 @@ func (api *API) genBasicToWMSV2PreItemDefLines(pbPkg *Package, packageMap map[st
 			lines = append(lines, fmt.Sprintf("if req.%s != nil {", upAlias))
 			origItem := field.toDefBasicItemOrItems(module)
 			lines = append(lines, origItem...)
-			errMsg := "\t\tif jsErr := copier.Copy(req.%s, %s); jsErr != nil {\n\t\t\treturn nil, wmserror.NewError(constant.ErrJsonDecodeFail, jsErr.Error())\n\t\t}"
+			errMsg := "\t\tif jsErr := copier.Copy(req.%s, &%s); jsErr != nil {\n\t\t\treturn nil, wmserror.NewError(constant.ErrJsonDecodeFail, jsErr.Error())\n\t\t}"
+			if field.isPointer() {
+				errMsg = strings.ReplaceAll(errMsg, "&", "")
+			}
+
 			lines = append(lines, fmt.Sprintf(errMsg, upAlias, field.formatFieldAlias()))
 
 			lines = append(lines, "}")
@@ -1844,7 +1871,6 @@ func (api *API) genBasicToWMSV2PreItemDefLines(pbPkg *Package, packageMap map[st
 				item = fmt.Sprintf("var \t%s =req.Get%s()", field.Alias, upFirstChar(field.Alias))
 			}
 			params = append(params, item)
-
 		}
 
 	}
@@ -1976,6 +2002,7 @@ func dealCopyErrLines(retItemVars []string) []string {
 
 func isNormalType(fieldTypeStr string) bool {
 	normalTypes := []string{
+		"bool",
 		"int64",
 		"string",
 		"[]string",
@@ -2018,6 +2045,33 @@ func (api *API) apiRets() []string {
 	return rets
 }
 
+func (api *API) apiProxyRets() []string {
+	rets := []string{}
+	for i, ret := range api.Resp {
+		v := fmt.Sprintf("proxyRet%d", i+1)
+		if ret == "*wmserror.WMSError" {
+			v = "err"
+		}
+		rets = append(rets, v)
+	}
+	return rets
+}
+
+func (api *API) apiRetsWithProxyTmp() []string {
+	rets := []string{}
+	for i, ret := range api.Resp {
+		v := fmt.Sprintf("proxyRet%d", i+1)
+		if isInPkgSturctItem(ret) {
+			v = "tmp" + upFirstChar(v)
+		}
+		if ret == "*wmserror.WMSError" {
+			v = "proxyErr"
+		}
+		rets = append(rets, v)
+	}
+	return rets
+}
+
 func (api *API) apiPbRets() []string {
 	rets := []string{}
 	for i, ret := range api.Resp {
@@ -2036,6 +2090,28 @@ func (api *API) apiPbRets() []string {
 //	 "var err *wmserr.err",
 //]
 func (api *API) apiRetDefs() []string {
+	rets := []string{}
+	for i, ret := range api.Resp {
+		v := fmt.Sprintf("var %s  %s", fmt.Sprintf("ret%d", i+1), ret)
+		if ret == "*wmserror.WMSError" {
+			v = "var err *wmserror.WMSError"
+		} else {
+			if !isNormalType(ret) {
+				if isSturctItems(ret) {
+					v = fmt.Sprintf("var %s = %s{}", fmt.Sprintf("ret%d", i+1), api.convertToBasicDtoType(ret))
+				} else {
+					ret = strings.ReplaceAll(ret, "*", "&")
+					v = fmt.Sprintf("var %s = %s{}", fmt.Sprintf("ret%d", i+1), api.convertToBasicDtoType(ret))
+				}
+			}
+		}
+
+		rets = append(rets, v)
+	}
+	return rets
+}
+
+func (api *API) apiRetDefsSrcProxyWithoutConvertToDto() []string {
 	rets := []string{}
 	for i, ret := range api.Resp {
 		v := fmt.Sprintf("var %s  %s", fmt.Sprintf("ret%d", i+1), ret)
@@ -2064,20 +2140,17 @@ func (api *API) proxyFuncBody2() string {
 	//var ret1 []*entity.CellSizeType
 	//var ret2 int64
 	//var ret3 *wmserror.WMSError
-	for i, ret := range api.Resp {
-		v := fmt.Sprintf("var %s %s", fmt.Sprintf("ret%d", i), ret)
-		bodyStr = append(bodyStr, v)
-	}
+	//for i, ret := range api.Resp {
+	//	v := fmt.Sprintf("var %s %s", fmt.Sprintf("ret%d", i), ret)
+	//	bodyStr = append(bodyStr, v)
+	//}
+	bodyStr = append(bodyStr, api.apiRetDefsSrcProxyWithoutConvertToDto()...)
 
 	//
 	//originHandler := func(ctx context.Context) {
 	//	ret1, ret2, ret3 = c.origin.SearchCellSizeList(ctx, whsID)
 	//}
-	retParams := []string{}
-	for i := range api.Resp {
-		retParams = append(retParams, fmt.Sprintf("ret%d ", i))
-	}
-	rets := strings.Join(retParams, ", ")
+	rets := strings.Join(api.apiRets(), ", ")
 
 	bodyStr = append(bodyStr, "\toriginHandler := func(ctx context.Context) {")
 	params := []string{}
@@ -2107,11 +2180,14 @@ func (api *API) proxyFuncBody2() string {
 				fType := strings.ReplaceAll(originType, "[]*", "")
 				copyReqs = append(copyReqs, fmt.Sprintf("%s := []*wmsbasic.%sItem{}", reqStr, fType))
 			} else {
-				copyReqs = append(copyReqs, fmt.Sprintf("%s := &wmsbasic.%sItem{}", reqStr, reqItemType))
+				if strings.Contains(field.Type, "*") {
+					copyReqs = append(copyReqs, fmt.Sprintf("%s := &wmsbasic.%sItem{}", reqStr, reqItemType))
+				} else {
+					copyReqs = append(copyReqs, fmt.Sprintf("%s := wmsbasic.%sItem{}", reqStr, reqItemType))
+				}
 			}
 
 			//ctErr := copier.Copy(condition, &req)
-			//todo 是否是指针
 			copyReqs = append(copyReqs, fmt.Sprintf("ctErr := copier.Copy(%s, %s)", field.Alias, reqStr))
 			//if ctErr != nil {
 			//	return wmserror.NewError(constant.ErrJsonDecodeFail, ctErr.Error())
@@ -2128,9 +2204,16 @@ func (api *API) proxyFuncBody2() string {
 	}
 	proxyParamsStr := strings.Join(proxyParams, ", ")
 
-	proxyCallOriginal := fmt.Sprintf("= %s.%sProxyAPI.%s(%s)", api.ReceiverAlias, lowerFirstChar(api.ReceiverName), api.Method, proxyParamsStr)
-	bodyStr = append(bodyStr, rets+proxyCallOriginal)
-	bodyStr = append(bodyStr, fmt.Sprintf("return %s", retParams[len(retParams)-1]))
+	proxyCallOriginal := fmt.Sprintf(":= %s.%sProxyAPI.%s(%s)", api.ReceiverAlias, lowerFirstChar(api.ReceiverName), api.Method, proxyParamsStr)
+	//处理返回值为当前包下的struct
+	bodyStr = append(bodyStr, strings.Join(api.apiRetsWithProxyTmp(), ",")+proxyCallOriginal)
+	bodyStr = append(bodyStr, "err = proxyErr")
+	bodyStr = append(bodyStr, "if proxyErr!=nil{\n return proxyErr.Mark() \n}")
+
+	lines := api.genCopyTmpVar()
+	bodyStr = append(bodyStr, lines...)
+
+	bodyStr = append(bodyStr, "return nil")
 	bodyStr = append(bodyStr, "\t}")
 
 	bodyStr = append(bodyStr, fmt.Sprintf("endPoint := \"%s\"", api.Method))
@@ -2154,7 +2237,7 @@ func (api *API) proxyPbAPIReq() string {
 	}
 
 	basicAPI.Method = api.genBasicAPIMethod()
-	basicAPI.Path = "openapi/basic/" + api.Path + "/" + api.Method
+	basicAPI.Path = "openapi/basicv2/" + api.Path + "/" + api.Method
 	var reqFieldStr []string
 	reqFieldStr = append(reqFieldStr, fmt.Sprintf("type %s%sReq struct{", upFirstChar(api.Package), api.Method))
 
@@ -2208,7 +2291,7 @@ func (api *API) proxyPbAPI() *BASICAPI {
 
 	basicAPI.Package = api.Package
 	basicAPI.Method = api.genBasicAPIMethod()
-	basicAPI.Path = "openapi/basic/" + api.Path + "/" + api.Method
+	basicAPI.Path = "openapi/basicv2/" + api.Path + "/" + api.Method
 	basicAPI.ReqFields = api.ReqFields
 	basicAPI.RespTypeStr = api.Resp
 	return basicAPI
@@ -2218,11 +2301,10 @@ func (api *API) proxyPbAPI() *BASICAPI {
 func (api *API) proxyProxyAPIReqItem() []string {
 	basicAPI := &BASICAPI{}
 
-	basicAPI.Path = "openapi/basic/" + api.Path + "/" + api.Method
+	basicAPI.Path = "openapi/basicv2/" + api.Path + "/" + api.Method
 	var reqFieldStr []string
 	reqFieldStr = append(reqFieldStr, fmt.Sprintf("type %s%sReq struct{", upFirstChar(api.Package), api.Method))
 
-	innerStructset := hashset.New()
 	for _, field := range api.ReqFields {
 		fieldParam := field.Alias
 		fieldParamDef := upFirstChar(fieldParam)
@@ -2238,8 +2320,6 @@ func (api *API) proxyProxyAPIReqItem() []string {
 		//	fieldType != "[]string" &&
 		//	fieldType != "[]int64" {
 		if api.isNeedRedefineStruct(field) {
-
-			innerStructset.Add(strings.ReplaceAll(fieldType, "*", ""))
 			reqFieldStr = append(reqFieldStr, fmt.Sprintf("\t%s %sItem `json:\"%s,omitempty\"`", fieldParamDef, fieldType, ToSnakeCase(fieldParamDef)))
 		} else {
 			reqFieldStr = append(reqFieldStr, fmt.Sprintf("\t%s %s `json:\"%s,omitempty\"`", fieldParamDef, fieldType, ToSnakeCase(fieldParamDef)))
@@ -2248,8 +2328,13 @@ func (api *API) proxyProxyAPIReqItem() []string {
 
 	reqFieldStr = append(reqFieldStr, "}")
 	var itemFields []string
-	for _, i := range innerStructset.Values() {
-		fieldType := i.(string)
+	for _, i := range api.genInnerDefPkgStructs() {
+		ftype := i
+		if isNormalType(ftype) || strings.Contains(ftype, ".") {
+			continue
+		}
+
+		fieldType := i
 		depStructFieldType := api.genInnerPkgStructDef(fieldType)
 
 		itemFields = append(itemFields, depStructFieldType)
@@ -2275,7 +2360,10 @@ func (api *API) proxyBasicSign() string {
 func (api *API) methodReturnSign() string {
 	var retParams []string
 	for i := range api.Resp {
-		retParams = append(retParams, fmt.Sprintf("%s ", api.Resp[i]))
+		retType := api.Resp[i]
+		retType = api.convertToBasicDtoType(retType)
+
+		retParams = append(retParams, fmt.Sprintf("%s ", retType))
 	}
 	var retSign = ""
 	if len(retParams) > 1 {
@@ -2300,11 +2388,26 @@ func (api *API) genInnerDefPkgStructs() []string {
 			innerStructset.Add(item)
 		}
 	}
+	if api.Pkg.name == "mlifecyclerule" {
+		innerStructset.Add("ConfirmRuleItem")
+	}
+	for _, retType := range api.Resp {
+		if isNormalType(retType) {
+			continue
+		}
+		if strings.Contains(retType, ".") {
+			continue
+		}
+		item := strings.ReplaceAll(retType, "*", "")
+		item = strings.ReplaceAll(item, "[]", "")
+		innerStructset.Add(item)
+	}
 	var items []string
 	for _, i := range innerStructset.Values() {
 		fieldType := i.(string)
 		items = append(items, fieldType)
 	}
+
 	return items
 }
 func (api *API) genOuterDefPkgStructs() []string {
@@ -2321,7 +2424,6 @@ func (api *API) genOuterDefPkgStructs() []string {
 		}
 	}
 	for _, field := range api.Resp {
-
 		//当前包下的struct
 		if strings.Contains(field, ".") {
 			outStructset.Add(field)
@@ -2407,6 +2509,98 @@ func (api *API) parsePbReqType(pbPkg *Package) map[string]*Field {
 	reqPbTypesMap := itemTypeMap[pbReqType]
 
 	return reqPbTypesMap
+}
+
+func (api API) isNeedHandler(conf *CodeGenConf) bool {
+	receiverName := api.ReceiverName
+	receiverName = strings.ReplaceAll(receiverName, "*", "")
+	isNeedHandler := false
+	for _, targetStruct := range conf.targetStructs {
+		if receiverName == targetStruct {
+			isNeedHandler = true
+		}
+	}
+	return isNeedHandler
+
+}
+
+func (b API) convertToBasicDtoType(retType string) string {
+	if isNormalType(retType) {
+		return retType
+	}
+
+	if strings.Contains(retType, ".") {
+		return retType
+	}
+
+	origin := retType
+	realType := strings.ReplaceAll(strings.ReplaceAll(retType, "[]", ""), "*", "")
+	if !isNormalType(realType) {
+		if strings.Contains(origin, "[]") {
+			if strings.Contains(origin, "*") {
+				return fmt.Sprintf("[]*%sItem", realType)
+			} else {
+				return fmt.Sprintf("[]*%sItem", realType)
+			}
+		} else {
+			if strings.Contains(origin, "*") {
+				return fmt.Sprintf("*%sItem", realType)
+			} else {
+				return fmt.Sprintf("%sItem", realType)
+			}
+		}
+	}
+
+	return retType
+}
+
+func (api API) isContainTmpVar() bool {
+	for _, ret := range api.apiRetsWithProxyTmp() {
+		if strings.Contains(ret, "tmp") {
+			return true
+		}
+	}
+	return false
+}
+
+func (api API) genCopyTmpVar() []string {
+	lines := []string{}
+	retTypes := api.Resp
+	for i, ret := range api.apiRetsWithProxyTmp() {
+		retType := retTypes[i]
+		isErr := retType == "*wmserror.WMSError"
+		if isErr {
+			continue
+		}
+		assignRet := fmt.Sprintf("ret%d", i+1)
+
+		if isNormalType(retType) {
+			lines = append(lines, fmt.Sprintf("ret%d = proxyRet%d", i+1, i+1))
+			continue
+		} else {
+			//切片数组列表
+			if strings.Contains(ret, "tmp") {
+				if strings.Contains(retType, "[]") && !strings.Contains(retType, ".") {
+					lines = append(lines, fmt.Sprintf("if cpErr:=copier.Copy(%s,&%s);cpErr!=nil{", ret, assignRet))
+					lines = append(lines, "return wmserror.NewError(constant.ErrJsonDecodeFail, cpErr.Error()) \n}")
+				} else {
+					isPointer := strings.Contains(retType, "*")
+
+					lines = append(lines, fmt.Sprintf("if %s!=nil{", ret))
+					if isPointer {
+						lines = append(lines, fmt.Sprintf("if cpErr:=copier.Copy(%s,%s);cpErr!=nil{", ret, assignRet))
+					} else {
+						lines = append(lines, fmt.Sprintf("if cpErr:=copier.Copy(%s,&%s);cpErr!=nil{", ret, assignRet))
+					}
+					lines = append(lines, "return wmserror.NewError(constant.ErrJsonDecodeFail, cpErr.Error()) \n}")
+					lines = append(lines, "}")
+				}
+			} else {
+				lines = append(lines, "xxxxx:"+ret)
+			}
+		}
+	}
+	return lines
 }
 
 var matchFirstCap = regexp.MustCompile("(.)([A-Z][a-z]+)")
