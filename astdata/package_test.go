@@ -121,9 +121,9 @@ func TestWMSV2(t *testing.T) {
 	//genConf := getMHighbvalueConf()
 	genConf := getMSKUConf()
 	//genConf.genTplFile = true
-	//genConf.genProxyWMSBasicAPICode = true
+	genConf.genProxyWMSBasicAPICode = true
 	//genConf.genWMSBasicV2APICode = true
-	genConf.genSrcProxyCodeFile = true
+	//genConf.genSrcProxyCodeFile = true
 	err := ParsePackage2(packageMap, genConf.name, true)
 	if err != nil {
 		t.Error(err.Error())
@@ -216,7 +216,7 @@ message MapSkuProdExpiryDateFormatTabItem{
 
 	if genConf.genProxyWMSBasicAPICode {
 		//wmsbasic api
-		err = genProxyAPICodeFile(genConf.codeBase, genConf.pbSrcBase, packageMap, pcode)
+		err = genProxyAPICodeFile(genConf, packageMap, pcode)
 		if err != nil {
 			t.Error(err.Error())
 		}
@@ -358,7 +358,9 @@ func parsePbStructs(pbSrcBase string, pcode *PCode, packageMap map[string]*Packa
 	return nil
 }
 
-func genProxyAPICodeFile(base string, pbsrcBase string, packageMap map[string]*Package, pcode *PCode) error {
+func genProxyAPICodeFile(genConf *CodeGenConf, packageMap map[string]*Package, pcode *PCode) error {
+	base := genConf.codeBase
+	pbsrcBase := genConf.pbSrcBase
 	module := pcode.p.name
 	filePre := base + "/" + module
 	pbSrcPkg := packageMap[pbsrcBase]
@@ -426,6 +428,13 @@ func genProxyAPICodeFile(base string, pbsrcBase string, packageMap map[string]*P
 		return err
 	}
 
+	dtoFiles = []string{"package " + genConf.basicV2APIPkg, strings.Join(helpers, "\n")}
+	helperPref := fStr("%s/%s", genConf.basicV2APICodeBase, module)
+	err = ioutil.WriteFile(helperPref+"_dto_converter.go", []byte(strings.Join(dtoFiles, "\n")), 0644)
+	if err != nil {
+		return err
+	}
+
 	var endpoints = []string{}
 	endpoints = append(endpoints, fmt.Sprintf("// %s endpoint", module))
 	endpoints = append(endpoints, "var (")
@@ -436,10 +445,10 @@ func genProxyAPICodeFile(base string, pbsrcBase string, packageMap map[string]*P
 
 	dtoFiles = []string{"package wmsbasic"}
 	dtoFiles = append(dtoFiles, endpoints...)
-	//err = ioutil.WriteFile(filePre+"_basic_endpoint.go", []byte(strings.Join(dtoFiles, "\n")), 0644)
-	//if err != nil {
-	//	return err
-	//}
+	err = ioutil.WriteFile(filePre+"_basic_endpoint.go", []byte(strings.Join(dtoFiles, "\n")), 0644)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -695,7 +704,6 @@ func genViewHandlersV2ConvertReq(packageHead string, sortedAPIList []*BASICAPI, 
 	for _, basicapi := range sortedAPIList {
 		api := basicapi.api
 		receiver := basicapi.api.ReceiverName
-		curReceiver := callMngMap[receiver]
 		if strings.Contains(receiver, "Proxy") {
 			continue
 		}
@@ -719,80 +727,6 @@ func genViewHandlersV2ConvertReq(packageHead string, sortedAPIList []*BASICAPI, 
 		//funcs = append(funcs, "panic(1)")
 		funcs = append(funcs, fmt.Sprintf("return %s,nil", strings.Join(api.apiReqAliasWithoutCtx(), ",")))
 
-		funcs = append(funcs, "}")
-
-		basicAPIImps = append(basicAPIImps, funcs...)
-		continue
-
-		paramLines := []string{}
-
-		method := basicapi.api.Method
-		invokeParamStr := strings.Join(basicapi.viewInvokeAlias(), ",")
-		invokeRetStr := strings.Join(basicapi.api.apiRets(), ",")
-		api.apiRetDefs()
-
-		parseLines := []string{}
-		//convert to original param
-		parseReqMethod := api.parseReqToOriginMethod()
-		if len(api.Req) > 0 {
-			parseLines = append(parseLines, fStr("%s,err :=%s(req)", invokeParamStr, parseReqMethod))
-			parseLines = append(parseLines, api.viewHandlerErr())
-		}
-		funcs = append(funcs, paramLines...)
-
-		callLine := fmt.Sprintf(" %s:= v.%s.%s(%s)", invokeRetStr, curReceiver, method, invokeParamStr)
-		if len(basicapi.api.apiPbRets()) == 1 && basicapi.api.genBasicV2Err {
-			callLine = strings.ReplaceAll(callLine, ":", "")
-		}
-		handlerErr := basicapi.viewHandlerErr()
-		funcs = append(funcs, callLine)
-		funcs = append(funcs, handlerErr)
-
-		//convert to
-		//convert
-		for i, retType := range basicapi.api.Resp {
-			if retType == "*wmserror.WMSError" {
-				continue
-			}
-			if isNormalType(retType) {
-				continue
-			}
-			originRet := fmt.Sprintf("ret%v", i+1)
-			val := originRet
-			var def string
-			pbType := toPbType(retType, nil)
-			if strings.Contains(retType, "[]") {
-				val += "Items"
-				def = fmt.Sprintf("%v:=[]*pb%s.%s{}", val, module, pbType)
-			} else {
-				val += "Item"
-				def = fmt.Sprintf("%v:=&pb%s.%s{}", val, module, pbType)
-			}
-			funcs = append(funcs, def)
-			copyJson := `		if jsErr := copier.Copy(%s,%s); jsErr != nil {
-			return nil, wmserror.NewError(constant.ErrJsonDecodeFail, jsErr.Error())
-		}`
-			if strings.Contains(def, "[]") {
-				funcs = append(funcs, fmt.Sprintf(copyJson, originRet, "&"+val))
-			} else {
-				funcs = append(funcs, fmt.Sprintf(copyJson, originRet, "&"+val))
-			}
-		}
-
-		if len(basicapi.api.Resp) == 1 {
-			funcs = append(funcs, fmt.Sprintf("resp := &%s{}", basicapi.api.apiPbRespType()))
-		} else {
-			funcs = append(funcs, fmt.Sprintf("resp := &%s{", basicapi.api.apiPbRespType()))
-			for i, retType := range basicapi.api.Resp {
-				if retType == "*wmserror.WMSError" {
-					continue
-				}
-				val := fmt.Sprintf("ret%v", i+1)
-				funcs = append(funcs, fmt.Sprintf("Ret%v:%s,", i+1, convertToPbType(retType, val)))
-			}
-			funcs = append(funcs, "}")
-		}
-		funcs = append(funcs, "return resp,nil")
 		funcs = append(funcs, "}")
 
 		basicAPIImps = append(basicAPIImps, funcs...)
@@ -4161,18 +4095,40 @@ func TestName1(t *testing.T) {
 
 var mskuConvertToPbReqCodeMap = map[string]map[string]string{
 	"msku": {
-		"GetUpdateOaRuleId":                                    "",
-		"parseGetCategoryTreeListPbResp":                       "func parseGetCategoryTreeListPbResp(resp *pbmsku.GetCategoryTreeListResponse) []*entity.CategoryTree {\n\tvar ret1 = []*entity.CategoryTree{}\n\n\tif jsErr := copier.Copy(resp.GetRet1(), &ret1); jsErr != nil {\n\t\tlogger.LogInfof(\" convert err :%v\", jsErr.Error())\n\t}\n\treturn ret1\n}",
-		"parseGetSupplierNameMappingBySupplierIDListMngPbResp": "func parseGetSupplierNameMappingBySupplierIDListMngPbResp(resp *pbmsku.GetSupplierNameMappingBySupplierIDListMngResponse) (map[int64]string, *wmserror.WMSError) {\n\tvar ret1 = map[int64]string{}\n\tvar err *wmserror.WMSError\n\n\t// 转换返回值\n\tif resp.Ret1 != nil {\n\t\tif jsErr := copier.Copy(resp.GetRet1(), &ret1); jsErr != nil {\n\t\t\treturn ret1, wmserror.NewError(constant.ErrBadRequest, \"json convert err:\", jsErr.Error())\n\t\t}\n\t}\n\treturn ret1, err\n}",
-		"parseCalculateMappingInfoPbResp":                      "func parseCalculateMappingInfoPbResp(resp *pbmsku.CalculateMappingInfoResponse) []*entity.SKUCalculateMapping {\n\tvar ret1 = []*entity.SKUCalculateMapping{}\n\n\tif len(resp.Ret1) > 0 {\n\t\tif jsErr := copier.Copy(resp.GetRet1(), &ret1); jsErr != nil {\n\t\t\tlogger.LogErrorf(\"json convert err:%v\", jsErr.Error())\n\t\t}\n\t}\n\treturn ret1\n}",
-		"toGetSKUItemBySkuIdPbReq":                             "func toGetSKUItemBySkuIdPbReq(skuID string, options *DbOption) (*pbmsku.GetSKUItemBySkuIdRequest, *wmserror.WMSError) {\n\toption := &pbmsku.Option{}\n\tif options != nil {\n\t\toption.UseMaster = convert.Bool(options.UseMaster)\n\t}\n\treq := &pbmsku.GetSKUItemBySkuIdRequest{\n\t\tSkuId: convert.String(skuID),\n\t\tOptions:   option,\n\t}\n\treturn req, nil\n}",
-		"toGetSkuListBySkuIDListMngPbReq":                      "func toGetSkuListBySkuIDListMngPbReq(skuIDList []string, options *DbOption) (*pbmsku.GetSkuListBySkuIDListMngRequest, *wmserror.WMSError) {\n\toption := &pbmsku.Option{}\n\tif options != nil {\n\t\toption.UseMaster = convert.Bool(options.UseMaster)\n\t}\n\treq := &pbmsku.GetSkuListBySkuIDListMngRequest{\n\t\tSkuIdList: skuIDList,\n\t\tOptions:   option,\n\t}\n\treturn req, nil\n}",
-		"toGetExportShopListMngPbReq":                          "func toGetExportShopListMngPbReq(params ExportShopRequestItem, whsID string) (*pbmsku.GetExportShopListMngRequest, *wmserror.WMSError) {\n\tvar paramsItem *pbmsku.ExportShopRequestItem\n\tparamsItem = &pbmsku.ExportShopRequestItem{}\n\tif jsErr := copier.Copy(params, paramsItem); jsErr != nil {\n\t\treturn nil, wmserror.NewError(constant.ErrBadRequest, \"json convert err:%v\", jsErr.Error())\n\t}\n\treq := &pbmsku.GetExportShopListMngRequest{\n\t\tParams: paramsItem,\n\t\tWhsId:  convert.String(whsID),\n\t}\n\treturn req, nil\n}",
-		"toGetUpdatePouchPackagingPbReq":                       "func toGetUpdatePouchPackagingPbReq(categoryNode *CategoryTreeNodeItem, isPouchPackaging constant.IsPouchPackingStorageType, updateType constant.CategoryAttrUpdateTypeEnum, operator string, categoryIDAttrMap map[int64]*entity.CategoryWhsAttr) (*pbmsku.GetUpdatePouchPackagingRequest, *wmserror.WMSError) {\n\tvar categoryNodeItem *pbmsku.CategoryTreeNodeItem\n\tif categoryNode != nil {\n\t\tcategoryNodeItem = &pbmsku.CategoryTreeNodeItem{}\n\t\tif jsErr := copier.Copy(categoryNode, categoryNodeItem); jsErr != nil {\n\t\t\treturn nil, wmserror.NewError(constant.ErrBadRequest, \"json convert err:%v\", jsErr.Error())\n\t\t}\n\t}\n\tvar categoryIDAttrMapItem []*pbmsku.MapCategoryWhsAttrItem\n\tfor id, attr := range categoryIDAttrMap {\n\t\titem := &pbmsku.CategoryWhsAttrItem{}\n\t\tif jsErr := copier.Copy(attr, item); jsErr != nil {\n\t\t\treturn nil, wmserror.NewError(constant.ErrBadRequest, \"json convert err:%v\", jsErr.Error())\n\t\t}\n\n\t\tcategoryIDAttrMapItem = append(categoryIDAttrMapItem, &pbmsku.MapCategoryWhsAttrItem{\n\t\t\tId:   convert.Int64(id),\n\t\t\tAttr: item,\n\t\t})\n\t}\n\n\treq := &pbmsku.GetUpdatePouchPackagingRequest{\n\t\tCategoryNode:      categoryNodeItem,\n\t\tIsPouchPackaging:  convert.Int64(isPouchPackaging),\n\t\tUpdateType:        convert.Int64(updateType),\n\t\tOperator:          convert.String(operator),\n\t\tCategoryIdAttrMap: categoryIDAttrMapItem,\n\t}\n\treturn req, nil\n}",
-		"toUpdateSuggestZoneAndPathwayCorePbReq":               "func toUpdateSuggestZoneAndPathwayCorePbReq(whsID string, deleteZonePathwaysCategoryIds []int64, createZonePathways []*CategoryZonePathwayConfTabItem, whsCategoryIDZonePathwaysMap map[int64][]*entity.CategoryZonePathwayConf, operator string) (*pbmsku.UpdateSuggestZoneAndPathwayCoreRequest, *wmserror.WMSError) {\n\tvar createZonePathwaysItems []*pbmsku.CategoryZonePathwayConfTabItem\n\tif len(createZonePathways) > 0 {\n\t\tcreateZonePathwaysItems = []*pbmsku.CategoryZonePathwayConfTabItem{}\n\t\tif jsErr := copier.Copy(createZonePathways, createZonePathwaysItems); jsErr != nil {\n\t\t\treturn nil, wmserror.NewError(constant.ErrBadRequest, \"json convert err:%v\", jsErr.Error())\n\t\t}\n\t}\n\tvar whsCategoryIDZonePathwaysMapItem []*pbmsku.MapCategoryZonePathwayConfList\n\tfor id, list := range whsCategoryIDZonePathwaysMap {\n\n\t\titemList := []*pbmsku.CategoryZonePathwayConfItem{}\n\n\t\tif jsErr := copier.Copy(list, &itemList); jsErr != nil {\n\t\t\treturn nil, wmserror.NewError(constant.ErrBadRequest, \"json convert err:%v\", jsErr.Error())\n\t\t}\t\n\t\titem := &pbmsku.MapCategoryZonePathwayConfList{\n\t\t\tId: convert.Int64(id),\n\t\t\tList: itemList,\n\t\t}\n\t\twhsCategoryIDZonePathwaysMapItem = append(whsCategoryIDZonePathwaysMapItem, item)\n\t}\n\n\treq := &pbmsku.UpdateSuggestZoneAndPathwayCoreRequest{\n\t\tWhsId:                         convert.String(whsID),\n\t\tDeleteZonePathwaysCategoryIds: deleteZonePathwaysCategoryIds,\n\t\tCreateZonePathways:            createZonePathwaysItems,\n\t\tWhsCategoryIdZonePathwaysMap:  whsCategoryIDZonePathwaysMapItem,\n\t\tOperator:                      convert.String(operator),\n\t}\n\treturn req, nil\n}",
-		"toBuildCategoryTreeNodesByCategoryMapPbReq":           "func toBuildCategoryTreeNodesByCategoryMapPbReq(categoryItem *entity.CategoryTree, parentCategoryChildMap map[int64][]*entity.CategoryTree) (*pbmsku.BuildCategoryTreeNodesByCategoryMapRequest, *wmserror.WMSError) {\n\tvar categoryItemItem *pbmsku.CategoryTreeItem\n\tif categoryItem != nil {\n\t\tcategoryItemItem = &pbmsku.CategoryTreeItem{}\n\t\tif jsErr := copier.Copy(categoryItem, categoryItemItem); jsErr != nil {\n\t\t\treturn nil, wmserror.NewError(constant.ErrBadRequest, \"json convert err:%v\", jsErr.Error())\n\t\t}\n\t}\n\tvar parentCategoryChildMapItem []*pbmsku.MapCategoryTreeItemList\n\tfor id, trees := range parentCategoryChildMap {\n\t\titems := []*pbmsku.CategoryTreeItem{}\n\t\tif jsErr := copier.Copy(trees, &items); jsErr != nil {\n\t\t\treturn nil, wmserror.NewError(constant.ErrBadRequest, \"json convert err:%v\", jsErr.Error())\n\t\t}\n\n\t\tparentCategoryChildMapItem = append(parentCategoryChildMapItem, &pbmsku.MapCategoryTreeItemList{\n\t\t\tId:   convert.Int64(id),\n\t\t\tList: items,\n\t\t})\n\t}\n\treq := &pbmsku.BuildCategoryTreeNodesByCategoryMapRequest{\n\t\tCategoryItem:           categoryItemItem,\n\t\tParentCategoryChildMap: parentCategoryChildMapItem,\n\t}\n\treturn req, nil\n}",
-		"toGetUpdateInboundQcChecklistPbReq":                   "func toGetUpdateInboundQcChecklistPbReq(whsID string, categoryNode *CategoryTreeNodeItem, inboundQcChecklist string, operator string, categoryIDAttrMap map[int64]*entity.CategoryWhsAttr, categoryUpdateType int64) (*pbmsku.GetUpdateInboundQcChecklistRequest, *wmserror.WMSError) {\n\tvar categoryNodeItem *pbmsku.CategoryTreeNodeItem\n\tif categoryNode != nil {\n\t\tcategoryNodeItem = &pbmsku.CategoryTreeNodeItem{}\n\t\tif jsErr := copier.Copy(categoryNode, categoryNodeItem); jsErr != nil {\n\t\t\treturn nil, wmserror.NewError(constant.ErrBadRequest, \"json convert err:%v\", jsErr.Error())\n\t\t}\n\t}\n\n\tvar categoryIDAttrMapItem []*pbmsku.MapCategoryWhsAttrItem\n\tfor id, attr := range categoryIDAttrMap {\n\t\titem := &pbmsku.CategoryWhsAttrItem{}\n\t\tif jsErr := copier.Copy(attr, item); jsErr != nil {\n\t\t\treturn nil, wmserror.NewError(constant.ErrBadRequest, \"json convert err:%v\", jsErr.Error())\n\t\t}\n\n\t\tcategoryIDAttrMapItem = append(categoryIDAttrMapItem, &pbmsku.MapCategoryWhsAttrItem{\n\t\t\tId:   convert.Int64(id),\n\t\t\tAttr: item,\n\t\t})\n\t}\n\n\treq := &pbmsku.GetUpdateInboundQcChecklistRequest{\n\t\tWhsId:              convert.String(whsID),\n\t\tCategoryNode:       categoryNodeItem,\n\t\tInboundQcChecklist: convert.String(inboundQcChecklist),\n\t\tOperator:           convert.String(operator),\n\t\tCategoryIdAttrMap:  categoryIDAttrMapItem,\n\t\tCategoryUpdateType: convert.Int64(categoryUpdateType),\n\t}\n\treturn req, nil\n}",
-		"toGetUpdateOaRuleIdPbReq":                             "func toGetUpdateOaRuleIdPbReq(categoryNode *CategoryTreeNodeItem, oaRuleId string, operator string, categoryIDAttrMap map[int64]*entity.CategoryWhsAttr) (*pbmsku.GetUpdateOaRuleIdRequest, *wmserror.WMSError) {\n\tvar categoryNodeItem *pbmsku.CategoryTreeNodeItem\n\tif categoryNode != nil {\n\t\tcategoryNodeItem = &pbmsku.CategoryTreeNodeItem{}\n\t\tif jsErr := copier.Copy(categoryNode, categoryNodeItem); jsErr != nil {\n\t\t\treturn nil, wmserror.NewError(constant.ErrBadRequest, \"json convert err:%v\", jsErr.Error())\n\t\t}\n\t}\n\tvar categoryIDAttrMapItem []*pbmsku.MapCategoryWhsAttrItem\n\tfor id, attr := range categoryIDAttrMap {\n\t\titem := &pbmsku.CategoryWhsAttrItem{}\n\t\tif jsErr := copier.Copy(attr, item); jsErr != nil {\n\t\t\treturn nil, wmserror.NewError(constant.ErrBadRequest, \"json convert err:%v\", jsErr.Error())\n\t\t}\n\n\t\tcategoryIDAttrMapItem = append(categoryIDAttrMapItem, &pbmsku.MapCategoryWhsAttrItem{\n\t\t\tId:   convert.Int64(id),\n\t\t\tAttr: item,\n\t\t})\n\t}\n\n\treq := &pbmsku.GetUpdateOaRuleIdRequest{\n\t\tCategoryNode:      categoryNodeItem,\n\t\tOaRuleId:          convert.String(oaRuleId),\n\t\tOperator:          convert.String(operator),\n\t\tCategoryIdAttrMap: categoryIDAttrMapItem,\n\t}\n\treturn req, nil\n}",
+		"GetUpdateOaRuleId":                          "",
+		"parseGetCategoryTreeListPbResp":             "func parseGetCategoryTreeListPbResp(resp *pbmsku.GetCategoryTreeListResponse) []*entity.CategoryTree {\n\tvar ret1 = []*entity.CategoryTree{}\n\n\tif jsErr := copier.Copy(resp.GetRet1(), &ret1); jsErr != nil {\n\t\tlogger.LogInfof(\" convert err :%v\", jsErr.Error())\n\t}\n\treturn ret1\n}",
+		"parseCalculateMappingInfoPbResp":            "func parseCalculateMappingInfoPbResp(resp *pbmsku.CalculateMappingInfoResponse) []*entity.SKUCalculateMapping {\n\tvar ret1 = []*entity.SKUCalculateMapping{}\n\n\tif len(resp.Ret1) > 0 {\n\t\tif jsErr := copier.Copy(resp.GetRet1(), &ret1); jsErr != nil {\n\t\t\tlogger.LogErrorf(\"json convert err:%v\", jsErr.Error())\n\t\t}\n\t}\n\treturn ret1\n}",
+		"toGetSKUItemBySkuIdPbReq":                   "func toGetSKUItemBySkuIdPbReq(skuID string, options *DbOption) (*pbmsku.GetSKUItemBySkuIdRequest, *wmserror.WMSError) {\n\toption := &pbmsku.Option{}\n\tif options != nil {\n\t\toption.UseMaster = convert.Bool(options.UseMaster)\n\t}\n\treq := &pbmsku.GetSKUItemBySkuIdRequest{\n\t\tSkuId: convert.String(skuID),\n\t\tOptions:   option,\n\t}\n\treturn req, nil\n}",
+		"toGetSkuListBySkuIDListMngPbReq":            "func toGetSkuListBySkuIDListMngPbReq(skuIDList []string, options *DbOption) (*pbmsku.GetSkuListBySkuIDListMngRequest, *wmserror.WMSError) {\n\toption := &pbmsku.Option{}\n\tif options != nil {\n\t\toption.UseMaster = convert.Bool(options.UseMaster)\n\t}\n\treq := &pbmsku.GetSkuListBySkuIDListMngRequest{\n\t\tSkuIdList: skuIDList,\n\t\tOptions:   option,\n\t}\n\treturn req, nil\n}",
+		"toGetExportShopListMngPbReq":                "func toGetExportShopListMngPbReq(params ExportShopRequestItem, whsID string) (*pbmsku.GetExportShopListMngRequest, *wmserror.WMSError) {\n\tvar paramsItem *pbmsku.ExportShopRequestItem\n\tparamsItem = &pbmsku.ExportShopRequestItem{}\n\tif jsErr := copier.Copy(params, paramsItem); jsErr != nil {\n\t\treturn nil, wmserror.NewError(constant.ErrBadRequest, \"json convert err:%v\", jsErr.Error())\n\t}\n\treq := &pbmsku.GetExportShopListMngRequest{\n\t\tParams: paramsItem,\n\t\tWhsId:  convert.String(whsID),\n\t}\n\treturn req, nil\n}",
+		"toGetUpdatePouchPackagingPbReq":             "func toGetUpdatePouchPackagingPbReq(categoryNode *CategoryTreeNodeItem, isPouchPackaging constant.IsPouchPackingStorageType, updateType constant.CategoryAttrUpdateTypeEnum, operator string, categoryIDAttrMap map[int64]*entity.CategoryWhsAttr) (*pbmsku.GetUpdatePouchPackagingRequest, *wmserror.WMSError) {\n\tvar categoryNodeItem *pbmsku.CategoryTreeNodeItem\n\tif categoryNode != nil {\n\t\tcategoryNodeItem = &pbmsku.CategoryTreeNodeItem{}\n\t\tif jsErr := copier.Copy(categoryNode, categoryNodeItem); jsErr != nil {\n\t\t\treturn nil, wmserror.NewError(constant.ErrBadRequest, \"json convert err:%v\", jsErr.Error())\n\t\t}\n\t}\n\tvar categoryIDAttrMapItem []*pbmsku.MapCategoryWhsAttrItem\n\tfor id, attr := range categoryIDAttrMap {\n\t\titem := &pbmsku.CategoryWhsAttrItem{}\n\t\tif jsErr := copier.Copy(attr, item); jsErr != nil {\n\t\t\treturn nil, wmserror.NewError(constant.ErrBadRequest, \"json convert err:%v\", jsErr.Error())\n\t\t}\n\n\t\tcategoryIDAttrMapItem = append(categoryIDAttrMapItem, &pbmsku.MapCategoryWhsAttrItem{\n\t\t\tId:   convert.Int64(id),\n\t\t\tAttr: item,\n\t\t})\n\t}\n\n\treq := &pbmsku.GetUpdatePouchPackagingRequest{\n\t\tCategoryNode:      categoryNodeItem,\n\t\tIsPouchPackaging:  convert.Int64(isPouchPackaging),\n\t\tUpdateType:        convert.Int64(updateType),\n\t\tOperator:          convert.String(operator),\n\t\tCategoryIdAttrMap: categoryIDAttrMapItem,\n\t}\n\treturn req, nil\n}",
+		"toUpdateSuggestZoneAndPathwayCorePbReq":     "func toUpdateSuggestZoneAndPathwayCorePbReq(whsID string, deleteZonePathwaysCategoryIds []int64, createZonePathways []*CategoryZonePathwayConfTabItem, whsCategoryIDZonePathwaysMap map[int64][]*entity.CategoryZonePathwayConf, operator string) (*pbmsku.UpdateSuggestZoneAndPathwayCoreRequest, *wmserror.WMSError) {\n\tvar createZonePathwaysItems []*pbmsku.CategoryZonePathwayConfTabItem\n\tif len(createZonePathways) > 0 {\n\t\tcreateZonePathwaysItems = []*pbmsku.CategoryZonePathwayConfTabItem{}\n\t\tif jsErr := copier.Copy(createZonePathways, createZonePathwaysItems); jsErr != nil {\n\t\t\treturn nil, wmserror.NewError(constant.ErrBadRequest, \"json convert err:%v\", jsErr.Error())\n\t\t}\n\t}\n\tvar whsCategoryIDZonePathwaysMapItem []*pbmsku.MapCategoryZonePathwayConfList\n\tfor id, list := range whsCategoryIDZonePathwaysMap {\n\n\t\titemList := []*pbmsku.CategoryZonePathwayConfItem{}\n\n\t\tif jsErr := copier.Copy(list, &itemList); jsErr != nil {\n\t\t\treturn nil, wmserror.NewError(constant.ErrBadRequest, \"json convert err:%v\", jsErr.Error())\n\t\t}\t\n\t\titem := &pbmsku.MapCategoryZonePathwayConfList{\n\t\t\tId: convert.Int64(id),\n\t\t\tList: itemList,\n\t\t}\n\t\twhsCategoryIDZonePathwaysMapItem = append(whsCategoryIDZonePathwaysMapItem, item)\n\t}\n\n\treq := &pbmsku.UpdateSuggestZoneAndPathwayCoreRequest{\n\t\tWhsId:                         convert.String(whsID),\n\t\tDeleteZonePathwaysCategoryIds: deleteZonePathwaysCategoryIds,\n\t\tCreateZonePathways:            createZonePathwaysItems,\n\t\tWhsCategoryIdZonePathwaysMap:  whsCategoryIDZonePathwaysMapItem,\n\t\tOperator:                      convert.String(operator),\n\t}\n\treturn req, nil\n}",
+		"toBuildCategoryTreeNodesByCategoryMapPbReq": "func toBuildCategoryTreeNodesByCategoryMapPbReq(categoryItem *entity.CategoryTree, parentCategoryChildMap map[int64][]*entity.CategoryTree) (*pbmsku.BuildCategoryTreeNodesByCategoryMapRequest, *wmserror.WMSError) {\n\tvar categoryItemItem *pbmsku.CategoryTreeItem\n\tif categoryItem != nil {\n\t\tcategoryItemItem = &pbmsku.CategoryTreeItem{}\n\t\tif jsErr := copier.Copy(categoryItem, categoryItemItem); jsErr != nil {\n\t\t\treturn nil, wmserror.NewError(constant.ErrBadRequest, \"json convert err:%v\", jsErr.Error())\n\t\t}\n\t}\n\tvar parentCategoryChildMapItem []*pbmsku.MapCategoryTreeItemList\n\tfor id, trees := range parentCategoryChildMap {\n\t\titems := []*pbmsku.CategoryTreeItem{}\n\t\tif jsErr := copier.Copy(trees, &items); jsErr != nil {\n\t\t\treturn nil, wmserror.NewError(constant.ErrBadRequest, \"json convert err:%v\", jsErr.Error())\n\t\t}\n\n\t\tparentCategoryChildMapItem = append(parentCategoryChildMapItem, &pbmsku.MapCategoryTreeItemList{\n\t\t\tId:   convert.Int64(id),\n\t\t\tList: items,\n\t\t})\n\t}\n\treq := &pbmsku.BuildCategoryTreeNodesByCategoryMapRequest{\n\t\tCategoryItem:           categoryItemItem,\n\t\tParentCategoryChildMap: parentCategoryChildMapItem,\n\t}\n\treturn req, nil\n}",
+		"toGetUpdateInboundQcChecklistPbReq":         "func toGetUpdateInboundQcChecklistPbReq(whsID string, categoryNode *CategoryTreeNodeItem, inboundQcChecklist string, operator string, categoryIDAttrMap map[int64]*entity.CategoryWhsAttr, categoryUpdateType int64) (*pbmsku.GetUpdateInboundQcChecklistRequest, *wmserror.WMSError) {\n\tvar categoryNodeItem *pbmsku.CategoryTreeNodeItem\n\tif categoryNode != nil {\n\t\tcategoryNodeItem = &pbmsku.CategoryTreeNodeItem{}\n\t\tif jsErr := copier.Copy(categoryNode, categoryNodeItem); jsErr != nil {\n\t\t\treturn nil, wmserror.NewError(constant.ErrBadRequest, \"json convert err:%v\", jsErr.Error())\n\t\t}\n\t}\n\n\tvar categoryIDAttrMapItem []*pbmsku.MapCategoryWhsAttrItem\n\tfor id, attr := range categoryIDAttrMap {\n\t\titem := &pbmsku.CategoryWhsAttrItem{}\n\t\tif jsErr := copier.Copy(attr, item); jsErr != nil {\n\t\t\treturn nil, wmserror.NewError(constant.ErrBadRequest, \"json convert err:%v\", jsErr.Error())\n\t\t}\n\n\t\tcategoryIDAttrMapItem = append(categoryIDAttrMapItem, &pbmsku.MapCategoryWhsAttrItem{\n\t\t\tId:   convert.Int64(id),\n\t\t\tAttr: item,\n\t\t})\n\t}\n\n\treq := &pbmsku.GetUpdateInboundQcChecklistRequest{\n\t\tWhsId:              convert.String(whsID),\n\t\tCategoryNode:       categoryNodeItem,\n\t\tInboundQcChecklist: convert.String(inboundQcChecklist),\n\t\tOperator:           convert.String(operator),\n\t\tCategoryIdAttrMap:  categoryIDAttrMapItem,\n\t\tCategoryUpdateType: convert.Int64(categoryUpdateType),\n\t}\n\treturn req, nil\n}",
+		"toGetUpdateOaRuleIdPbReq":                   "func toGetUpdateOaRuleIdPbReq(categoryNode *CategoryTreeNodeItem, oaRuleId string, operator string, categoryIDAttrMap map[int64]*entity.CategoryWhsAttr) (*pbmsku.GetUpdateOaRuleIdRequest, *wmserror.WMSError) {\n\tvar categoryNodeItem *pbmsku.CategoryTreeNodeItem\n\tif categoryNode != nil {\n\t\tcategoryNodeItem = &pbmsku.CategoryTreeNodeItem{}\n\t\tif jsErr := copier.Copy(categoryNode, categoryNodeItem); jsErr != nil {\n\t\t\treturn nil, wmserror.NewError(constant.ErrBadRequest, \"json convert err:%v\", jsErr.Error())\n\t\t}\n\t}\n\tvar categoryIDAttrMapItem []*pbmsku.MapCategoryWhsAttrItem\n\tfor id, attr := range categoryIDAttrMap {\n\t\titem := &pbmsku.CategoryWhsAttrItem{}\n\t\tif jsErr := copier.Copy(attr, item); jsErr != nil {\n\t\t\treturn nil, wmserror.NewError(constant.ErrBadRequest, \"json convert err:%v\", jsErr.Error())\n\t\t}\n\n\t\tcategoryIDAttrMapItem = append(categoryIDAttrMapItem, &pbmsku.MapCategoryWhsAttrItem{\n\t\t\tId:   convert.Int64(id),\n\t\t\tAttr: item,\n\t\t})\n\t}\n\n\treq := &pbmsku.GetUpdateOaRuleIdRequest{\n\t\tCategoryNode:      categoryNodeItem,\n\t\tOaRuleId:          convert.String(oaRuleId),\n\t\tOperator:          convert.String(operator),\n\t\tCategoryIdAttrMap: categoryIDAttrMapItem,\n\t}\n\treturn req, nil\n}",
+
+		//resp
+		"parseCountShopByMerchantIDsPbResp":                    "func parseCountShopByMerchantIDsPbResp(resp *pbmsku.CountShopByMerchantIDsResponse) (map[uint64]int64, *wmserror.WMSError) {\n\tvar ret1 = map[uint64]int64{}\n\tvar err *wmserror.WMSError\n\n\tfor _, item := range resp.GetRet1() {\n\t\tret1[item.GetMKey()] = item.GetMVal()\n\t}\n\treturn ret1, err\n}",
+		"parseGetSKUCalculateMappingPbResp":                    "func parseGetSKUCalculateMappingPbResp(resp *pbmsku.GetSKUCalculateMappingResponse) (map[string][]string, *wmserror.WMSError) {\n\tvar ret1 = map[string][]string{}\n\tvar err *wmserror.WMSError\n\n\tfor _, item := range resp.GetRet1() {\n\t\tret1[item.GetMKey()]=item.GetMVals()\t\n\t}\n\n\treturn ret1, err\n}",
+		"parseGetSkuIsHeavyMapByWhsIdAndSkuIdListPbResp":       "func parseGetSkuIsHeavyMapByWhsIdAndSkuIdListPbResp(resp *pbmsku.GetSkuIsHeavyMapByWhsIdAndSkuIdListResponse) (map[string]bool, *wmserror.WMSError) {\n\tvar ret1 = map[string]bool{}\n\tvar err *wmserror.WMSError\n\n\tfor _, item := range resp.GetRet1() {\n\t\tret1[item.GetMKey()] = item.GetMValue() == \"1\"\n\t}\n\treturn ret1, err\n}",
+		"parseGetSkuIsBulKyMapByWhsIdAndSkuIdListPbResp":       "func parseGetSkuIsBulKyMapByWhsIdAndSkuIdListPbResp(resp *pbmsku.GetSkuIsBulKyMapByWhsIdAndSkuIdListResponse) (map[string]bool, *wmserror.WMSError) {\n\tvar ret1 = map[string]bool{}\n\tvar err *wmserror.WMSError\n\n\tfor _, item := range resp.GetRet1() {\n\t\tret1[item.GetMKey()] = item.GetMValue() == \"1\"\n\t}\n\treturn ret1, err\n}",
+		"parseGetSKU2CalculateMappingPbResp":                   "func parseGetSKU2CalculateMappingPbResp(resp *pbmsku.GetSKU2CalculateMappingResponse) (map[string][]string, map[string]string, *wmserror.WMSError) {\n\tvar ret1 = map[string][]string{}\n\tvar ret2 = map[string]string{}\n\tvar err *wmserror.WMSError\n\n\tfor _, item := range resp.GetRet1() {\n\t\tret1[item.GetMKey()] = item.GetMVals()\n\t}\n\tfor _, item := range resp.GetRet2() {\n\t\tret2[item.GetMKey()] = item.GetMValue()\n\t}\n\n\treturn ret1, ret2, err\n}",
+		"parseGetSKUsDateFormatMapPbResp":                      "func parseGetSKUsDateFormatMapPbResp(resp *pbmsku.GetSKUsDateFormatMapResponse) (map[string]*entity.SkuProdExpiryDateFormatTab, *wmserror.WMSError) {\n\tvar ret1 = map[string]*entity.SkuProdExpiryDateFormatTab{}\n\tvar err *wmserror.WMSError\n\n\tfor _, item := range resp.GetRet1() {\n\t\tdbItem := &entity.SkuProdExpiryDateFormatTab{}\n\t\tif jsErr := copier.Copy(item, dbItem); jsErr != nil {\n\t\t\treturn ret1, wmserror.NewError(constant.ErrBadRequest, \"json convert err:\", jsErr.Error())\n\t\t}\n\t\tret1[item.GetSkuId()] = dbItem\n\t}\n\treturn ret1, err\n}",
+		"parseGetSKUTagBySkuIDPbResp":                          "func parseGetSKUTagBySkuIDPbResp(resp *pbmsku.GetSKUTagBySkuIDResponse) (map[string][]*entity.SKUTagEntity, *wmserror.WMSError) {\n\tvar ret1 = map[string][]*entity.SKUTagEntity{}\n\tvar err *wmserror.WMSError\n\n\tfor _, item := range resp.GetRet1() {\n\t\tdbItems := []*entity.SKUTagEntity{}\n\t\tif jsErr := copier.Copy(item.GetTags(), &dbItems); jsErr != nil {\n\t\t\treturn ret1, wmserror.NewError(constant.ErrBadRequest, \"json convert err:\", jsErr.Error())\n\t\t}\n\t\tret1[item.GetSkuId()] = dbItems\n\t}\n\treturn ret1, err\n}",
+		"parseGetAllCategoryMapByCountryPbResp":                "func parseGetAllCategoryMapByCountryPbResp(resp *pbmsku.GetAllCategoryMapByCountryResponse) (map[int64]*entity.CategoryTree, *wmserror.WMSError) {\n\tvar ret1 = map[int64]*entity.CategoryTree{}\n\tvar err *wmserror.WMSError\n\n\tfor _, item := range resp.GetRet1() {\n\t\tdbItem := &entity.CategoryTree{}\n\t\tif jsErr := copier.Copy(item.GetItem(), dbItem); jsErr != nil {\n\t\t\treturn ret1, wmserror.NewError(constant.ErrBadRequest, \"json convert err:\", jsErr.Error())\n\t\t}\n\t\tret1[item.GetId()] = dbItem\n\t}\n\n\treturn ret1, err\n}",
+		"parseGetSKUCalculateMappingAndSKUListWithSlicePbResp": "func parseGetSKUCalculateMappingAndSKUListWithSlicePbResp(resp *pbmsku.GetSKUCalculateMappingAndSKUListWithSliceResponse) (map[string][]string, map[string]string, []string, *wmserror.WMSError) {\n\tvar ret1 = map[string][]string{}\n\tvar ret2 = map[string]string{}\n\tvar ret3 []string\n\tvar err *wmserror.WMSError\n\n\tfor _, item := range resp.GetRet1() {\n\t\tret1[item.GetMKey()] = item.GetMVals()\n\t}\n\tfor _, item := range resp.GetRet2() {\n\t\tret2[item.GetMKey()] = item.GetMValue()\n\t}\n\n\tret3 = resp.GetRet3()\n\treturn ret1, ret2, ret3, err\n}",
+		"parseGetAllSKU2CalculateMappingPbResp":                "func parseGetAllSKU2CalculateMappingPbResp(resp *pbmsku.GetAllSKU2CalculateMappingResponse) (map[string][]string, map[string]string, *wmserror.WMSError) {\n\tvar ret1 = map[string][]string{}\n\tvar ret2 = map[string]string{}\n\tvar err *wmserror.WMSError\n\n\tfor _, item := range resp.GetRet1() {\n\t\tret1[item.GetMKey()] = item.GetMVals()\n\t}\n\tfor _, item := range resp.GetRet2() {\n\t\tret2[item.GetMKey()] = item.GetMValue()\n\t}\n\treturn ret1, ret2, err\n}",
+		"parseGetSKUTagBySkuWhsAttrPbResp":                     "func parseGetSKUTagBySkuWhsAttrPbResp(resp *pbmsku.GetSKUTagBySkuWhsAttrResponse) (map[string][]*entity.SKUTagEntity, *wmserror.WMSError) {\n\tvar ret1 = map[string][]*entity.SKUTagEntity{}\n\tvar err *wmserror.WMSError\n\n\tfor _, item := range resp.GetRet1() {\n\t\tdbItems := []*entity.SKUTagEntity{}\n\t\tif jsErr := copier.Copy(item.GetTags(), &dbItems); jsErr != nil {\n\t\t\treturn ret1, wmserror.NewError(constant.ErrBadRequest, \"json convert err:\", jsErr.Error())\n\t\t}\n\t\tret1[item.GetSkuId()] = dbItems\n\t}\n\treturn ret1, err\n}",
+		"parseSearchCategoryZonePathwayMngPbResp":              "func parseSearchCategoryZonePathwayMngPbResp(resp *pbmsku.SearchCategoryZonePathwayMngResponse) (map[int64][]string, map[int64][]string, *wmserror.WMSError) {\n\tvar ret1 = map[int64][]string{}\n\tvar ret2 = map[int64][]string{}\n\tvar err *wmserror.WMSError\n\n\tfor _, item := range resp.GetRet1() {\n\t\tret1[item.GetMKey()] = item.GetMVals()\n\t}\n\tfor _, item := range resp.GetRet2() {\n\t\tret2[item.GetMKey()] = item.GetMVals()\n\t}\n\treturn ret1, ret2, err\n}",
+		"parseGetSkuIsBulKyMapByWhsIdAndSkuItemListPbResp":     "func parseGetSkuIsBulKyMapByWhsIdAndSkuItemListPbResp(resp *pbmsku.GetSkuIsBulKyMapByWhsIdAndSkuItemListResponse) (map[string]bool, *wmserror.WMSError) {\n\tvar ret1 = map[string]bool{}\n\tvar err *wmserror.WMSError\n\n\tfor _, item := range resp.GetRet1() {\n\t\tret1[item.GetMKey()] = item.GetMValue() == \"1\"\n\t}\n\treturn ret1, err\n}",
+		"parseGetSupplierNameMappingBySupplierIDListMngPbResp": "func parseGetSupplierNameMappingBySupplierIDListMngPbResp(resp *pbmsku.GetSupplierNameMappingBySupplierIDListMngResponse) (map[int64]string, *wmserror.WMSError) {\n\tvar ret1 = map[int64]string{}\n\tvar err *wmserror.WMSError\n\n\tfor _, item := range resp.GetRet1() {\n\t\tid, cpErr := convert.StringToInt64(item.GetMKey())\n\t\tif cpErr != nil {\n\t\t\treturn nil, wmserror.NewError(constant.ErrDataConvertFail, cpErr.Error())\n\t\t}\n\t\tret1[id] = item.GetMValue()\n\t}\n\treturn ret1, err\n}",
+		"parseGetSkuScbsCannotUpdateFieldsTypeMapPbResp":       "func parseGetSupplierNameMappingBySupplierIDListMngPbResp(resp *pbmsku.GetSupplierNameMappingBySupplierIDListMngResponse) (map[int64]string, *wmserror.WMSError) {\n\tvar ret1 = map[int64]string{}\n\tvar err *wmserror.WMSError\n\n\tfor _, item := range resp.GetRet1() {\n\t\tid, cpErr := convert.StringToInt64(item.GetMKey())\n\t\tif cpErr != nil {\n\t\t\treturn nil, wmserror.NewError(constant.ErrDataConvertFail, cpErr.Error())\n\t\t}\n\t\tret1[id] = item.GetMValue()\n\t}\n\treturn ret1, err\n}",
+		"parseGetParentCategoryIDChildCategoryMapPbResp":       "func parseGetParentCategoryIDChildCategoryMapPbResp(resp *pbmsku.GetParentCategoryIDChildCategoryMapResponse) (map[int64][]*entity.CategoryTree, *wmserror.WMSError) {\n\tvar ret1 = map[int64][]*entity.CategoryTree{}\n\tvar err *wmserror.WMSError\n\n\tfor _, item := range resp.GetRet1() {\n\t\tdbItems := []*entity.CategoryTree{}\n\t\tif jsErr := copier.Copy(item.GetList(), &dbItems); jsErr != nil {\n\t\t\treturn ret1, wmserror.NewError(constant.ErrBadRequest, \"json convert err:\", jsErr.Error())\n\t\t}\n\t\tret1[item.GetId()] = dbItems\n\t}\n\treturn ret1, err\n}",
+		"parseMGetSkuOARuleIDPbResp":                           "func parseMGetSkuOARuleIDPbResp(resp *pbmsku.MGetSkuOARuleIDResponse) (map[string]string, *wmserror.WMSError) {\n\tvar ret1 = map[string]string{}\n\tvar err *wmserror.WMSError\n\n\tfor _, item := range resp.GetRet1() {\n\t\tret1[item.GetMKey()] = item.GetMValue()\n\t}\n\treturn ret1, err\n}",
+		"parseGetSkuIsBulKyTypeMapByWhsIdAndSkuIdListPbResp":   "func parseGetSkuIsBulKyTypeMapByWhsIdAndSkuIdListPbResp(resp *pbmsku.GetSkuIsBulKyTypeMapByWhsIdAndSkuIdListResponse) (map[string]constant.SkuSizeType, *wmserror.WMSError) {\n\tvar ret1 = map[string]constant.SkuSizeType{}\n\tvar err *wmserror.WMSError\n\n\tfor _, item := range resp.GetRet1() {\n\t\tid,cpErr:=convert.StringToInt64(item.GetMKey())\n\t\tif cpErr != nil {\n\t\t\treturn nil,wmserror.NewError(constant.ErrDataConvertFail,cpErr.Error())\n\t\t}\n\t\tret1[item.GetMKey()] = constant.SkuSizeType(id)\n\t}\n\n\treturn ret1, err\n}",
+		"parseGetSKUCalculateMappingAndSKUListPbResp":          "func parseGetSKUCalculateMappingAndSKUListPbResp(resp *pbmsku.GetSKUCalculateMappingAndSKUListResponse) (map[string][]string, map[string]string, []string, *wmserror.WMSError) {\n\tvar ret1 = map[string][]string{}\n\tvar ret2 = map[string]string{}\n\tvar ret3 []string\n\tvar err *wmserror.WMSError\n\n\tfor _, item := range resp.GetRet1() {\n\t\tret1[item.GetMKey()] = item.GetMVals()\n\t}\n\tfor _, item := range resp.GetRet2() {\n\t\tret2[item.GetMKey()] = item.GetMValue()\n\t}\n\n\tret3 = resp.GetRet3()\n\treturn ret1, ret2, ret3, err\n}",
+		"parseGetSkuIDListMbnMapPbResp":                        "func parseGetSkuIDListMbnMapPbResp(resp *pbmsku.GetSkuIDListMbnMapResponse) (map[string][]string, *wmserror.WMSError) {\n\tvar ret1 = map[string][]string{}\n\tvar err *wmserror.WMSError\n\n\tfor _, item := range resp.GetRet1() {\n\t\tret1[item.GetMKey()] = item.GetMVals()\n\t}\n\treturn ret1, err\n}",
+		"parseGetSkuMtSKUMapPbResp":                            "func parseGetSkuMtSKUMapPbResp(resp *pbmsku.GetSkuMtSKUMapResponse) (map[string]string, *wmserror.WMSError) {\n\tvar ret1 = map[string]string{}\n\tvar err *wmserror.WMSError\n\n\tfor _, item := range resp.GetRet1() {\n\t\tret1[item.GetMKey()] = item.GetMValue()\n\t}\n\n\treturn ret1, err\n}",
 	},
 }
 
