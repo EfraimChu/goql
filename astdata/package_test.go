@@ -119,7 +119,7 @@ func TestWMSV2(t *testing.T) {
 	packageMap := map[string]*Package{}
 	//genConf := getMsizeConf()
 	//genConf := getMHighbvalueConf()
-	genConf := getSSkuConf()
+	genConf := getSSkuExportConf()
 	//genConf.genTplFile = true
 	//genConf.genProxyWMSBasicAPICode = true
 	genConf.genWMSBasicV2APICode = true
@@ -386,6 +386,32 @@ func getSSkuConf() *CodeGenConf {
 		proxyStructType:         "SkuService",
 		targetStructs:           []string{"SkuService", "CategoryService"},
 		targetStruct:            "SkuService",
+		callMngMap:              callMngMap,
+	}
+	return genConf
+}
+
+func getSSkuExportConf() *CodeGenConf {
+	callMngMap := map[string]string{
+		"SkuService": "skuService",
+		//"TaskSizeTypeManager": "tasksizeTypeManger",
+	}
+	var genConf = &CodeGenConf{
+		genTplFile:              false,
+		genProxyWMSBasicAPICode: false,
+		genWMSBasicV2APICode:    false,
+		genSrcProxyCodeFile:     false,
+		name:                    "apps/basic/service/ssku/sskuexport",
+		srcBase:                 "/Users/yunfeizhu/Code/golang/wms-v2/apps/basic/service/ssku/sskuexport",
+		codeBase:                "/Users/yunfeizhu/Code/golang/wms-v2/apps/wmslib/wmsbasic",
+		pbBase:                  "/Users/yunfeizhu/Code/golang/wmsv2-basic-v2-protobuf/apps/basic/pbbasicv2",
+		pbSrcBase:               "apps/basic/pbbasicv2/pbsskuexport",
+		basicV2APICodeBase:      "/Users/yunfeizhu/Code/golang/wmsv2-basic-v2/apps/basic/view/vsku",
+		basicV2APIPkg:           "vsku",
+		basicV2ViewType:         "SKUView",
+		proxyStructType:         "SKUItemExportService",
+		targetStructs:           []string{"ExportShopService", "ExportSkuLogService", "ExportSupplierService", "SKUItemExportService"},
+		targetStruct:            "SKUItemExportService",
 		callMngMap:              callMngMap,
 	}
 	return genConf
