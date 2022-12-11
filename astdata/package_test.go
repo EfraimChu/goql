@@ -119,10 +119,10 @@ func TestWMSV2(t *testing.T) {
 	packageMap := map[string]*Package{}
 	//genConf := getMsizeConf()
 	//genConf := getMHighbvalueConf()
-	genConf := getMSKUConf()
+	genConf := getSSkuConf()
 	//genConf.genTplFile = true
-	genConf.genProxyWMSBasicAPICode = true
-	//genConf.genWMSBasicV2APICode = true
+	//genConf.genProxyWMSBasicAPICode = true
+	genConf.genWMSBasicV2APICode = true
 	//genConf.genSrcProxyCodeFile = true
 	err := ParsePackage2(packageMap, genConf.name, true)
 	if err != nil {
@@ -144,7 +144,51 @@ func TestWMSV2(t *testing.T) {
 		if err != nil {
 			t.Error(err.Error())
 		}
-		extLines := []string{`message MapItem{
+		extLines := []string{getSskuEntityPb()}
+		if genConf.name == "apps/basic/manager/msku" {
+			extLines = append(extLines, "message Option {\n  optional bool use_master = 1;\n}")
+		}
+
+		pcode.ouStructTplDbsMaps["entity"] = append(pcode.ouStructTplDbsMaps["entity"], extLines...)
+
+		err = genTplFile(genConf.pbBase, pcode)
+		if err != nil {
+			t.Error(err.Error())
+		}
+	}
+
+	if genConf.genProxyWMSBasicAPICode {
+		//wmsbasic api
+		err = genProxyAPICodeFile(genConf, packageMap, pcode)
+		if err != nil {
+			t.Error(err.Error())
+		}
+	}
+
+	if genConf.genWMSBasicV2APICode {
+		//wmsbasicv2 api
+		pbPkg := packageMap[genConf.pbSrcBase]
+		err = genBasicV2APICodeFile(genConf.basicV2APIPkg, genConf.basicV2ViewType, genConf.basicV2APICodeBase, pbPkg, pcode, packageMap)
+		if err != nil {
+			t.Error(err.Error())
+		}
+	}
+
+	if genConf.genSrcProxyCodeFile {
+		err = genSrcProxyCodeFile(genConf, pcode)
+		if err != nil {
+			t.Error(err.Error())
+		}
+	}
+	//genWMSV2ProxyPB(p)
+	//genWMSV2ProxyAPI(p)
+	//genWMSV2ProxyTestAPI(p)
+	//genBasicAPI(p)
+
+}
+
+func getMskuEntityPb() string {
+	mskuEntityPb := `message MapItem{
   optional string m_key = 1;
   optional string m_value = 2;
   optional string m_type = 3;
@@ -201,47 +245,56 @@ message MapSkuProdExpiryDateFormatTabItem{
   optional string  sku_id = 1;
   optional SkuProdExpiryDateFormatTabItem  item = 2;
 }
-`}
-		if genConf.name == "apps/basic/manager/msku" {
-			extLines = append(extLines, "message Option {\n  optional bool use_master = 1;\n}")
-		}
+`
+	return mskuEntityPb
+}
+func getSskuEntityPb() string {
+	mskuEntityPb := `message MapItem{
+  optional string m_key = 1;
+  optional string m_value = 2;
+  optional string m_type = 3;
+}
+message PageInItem{
+  optional  int64  Pageno = 1;       //页码
+  optional  int64     count = 2 ;    // 数量
+  optional  string  order_by = 3;    // 为空字符串 代表不需要排序
+  optional  bool  is_get_total = 4;  // 为False代表不需要获取总数
+}
+message MapStrsItem{
+  optional string m_key = 1;
+  repeated string m_vals = 2;
+}
+message SkuTransferItemItem{
+  optional string sku_id = 1;
+  optional string sku_name = 2;
+  optional string sku_description = 3;
+}
 
-		pcode.ouStructTplDbsMaps["entity"] = append(pcode.ouStructTplDbsMaps["entity"], extLines...)
-
-		err = genTplFile(genConf.pbBase, pcode)
-		if err != nil {
-			t.Error(err.Error())
-		}
-	}
-
-	if genConf.genProxyWMSBasicAPICode {
-		//wmsbasic api
-		err = genProxyAPICodeFile(genConf, packageMap, pcode)
-		if err != nil {
-			t.Error(err.Error())
-		}
-	}
-
-	if genConf.genWMSBasicV2APICode {
-		//wmsbasicv2 api
-		pbPkg := packageMap[genConf.pbSrcBase]
-		err = genBasicV2APICodeFile(genConf.basicV2APIPkg, genConf.basicV2ViewType, genConf.basicV2APICodeBase, pbPkg, pcode, packageMap)
-		if err != nil {
-			t.Error(err.Error())
-		}
-	}
-
-	if genConf.genSrcProxyCodeFile {
-		err = genSrcProxyCodeFile(genConf, pcode)
-		if err != nil {
-			t.Error(err.Error())
-		}
-	}
-	//genWMSV2ProxyPB(p)
-	//genWMSV2ProxyAPI(p)
-	//genWMSV2ProxyTestAPI(p)
-	//genBasicAPI(p)
-
+message MapSkuTranferItem {
+  optional string sku_id = 1;
+  optional SkuTransferItemItem item = 2;
+}
+message SKUChangeResultItem{
+  optional bool   sku_changed = 1;
+  optional bool   upc_changed = 2;
+}
+message MapSkuUpdateChangeItem{
+  optional  string sku_id = 1;
+  optional  SKUChangeResultItem item = 2;
+}
+message ValidateSkuLifecycleRequestItem{
+  optional string whs_id = 1;
+  optional string sku_id = 2;
+  optional int64  expired_type = 3;
+  optional int64  old_lifecycle = 4;
+  optional int64  sku_quality = 5;
+  optional int64  damage_type = 6;
+  optional int64  production_date = 7;
+  optional int64  expiration_date = 8;
+  optional int64  new_lifecycle = 9;
+}
+`
+	return mskuEntityPb
 }
 
 func getMsizeConf() *CodeGenConf {
@@ -307,6 +360,32 @@ func getMSKUConf() *CodeGenConf {
 		proxyStructType:         "SKUManager",
 		targetStructs:           []string{"SKUManager"},
 		targetStruct:            "SKUManager",
+		callMngMap:              callMngMap,
+	}
+	return genConf
+}
+
+func getSSkuConf() *CodeGenConf {
+	callMngMap := map[string]string{
+		"SkuService": "skuService",
+		//"TaskSizeTypeManager": "tasksizeTypeManger",
+	}
+	var genConf = &CodeGenConf{
+		genTplFile:              false,
+		genProxyWMSBasicAPICode: false,
+		genWMSBasicV2APICode:    false,
+		genSrcProxyCodeFile:     false,
+		name:                    "apps/basic/service/ssku",
+		srcBase:                 "/Users/yunfeizhu/Code/golang/wms-v2/apps/basic/service/ssku",
+		codeBase:                "/Users/yunfeizhu/Code/golang/wms-v2/apps/wmslib/wmsbasic",
+		pbBase:                  "/Users/yunfeizhu/Code/golang/wmsv2-basic-v2-protobuf/apps/basic/pbbasicv2",
+		pbSrcBase:               "apps/basic/pbbasicv2/pbssku",
+		basicV2APICodeBase:      "/Users/yunfeizhu/Code/golang/wmsv2-basic-v2/apps/basic/view/vsku",
+		basicV2APIPkg:           "vsku",
+		basicV2ViewType:         "SKUView",
+		proxyStructType:         "SkuService",
+		targetStructs:           []string{"SkuService", "CategoryService"},
+		targetStruct:            "SkuService",
 		callMngMap:              callMngMap,
 	}
 	return genConf
@@ -880,6 +959,9 @@ func genProxyAPIPbTpl(base string, pcode *PCode, packageMap map[string]*Package)
 	pTpls = append(pTpls, fmt.Sprintf("package %s;", pkgPbDir))
 	pTpls = append(pTpls, fmt.Sprintf("import \"%s\";", importDtoPkg))
 	pTpls = append(pTpls, fmt.Sprintf("import \"%s\";", importCommonPkg))
+	if module == "ssku" {
+		pTpls = append(pTpls, "import \"apps/basic/pbbasicv2/pbssku/message_entity.tpl.proto\";\nimport \"apps/basic/pbbasicv2/pbssku/mlifecyclerule_entity.tpl.proto\";\nimport \"apps/basic/pbbasicv2/pbssku/mrulegroup_entity.tpl.proto\";\nimport \"apps/basic/pbbasicv2/pbssku/msku_entity.tpl.proto\";\n")
+	}
 	pTpls = append(pTpls, "")
 	pTpls = append(pTpls, "")
 
@@ -988,7 +1070,7 @@ func genTplFile(base string, pcode *PCode) error {
 	}
 
 	//api
-	apiCommonStr := strings.Join(pcode.innerStructsPbTpls, "\n")
+	apiCommonStr := getApiDtoContent(pcode)
 	err = ioutil.WriteFile(fmt.Sprintf("%s/%s_dto.tpl.proto", tpl, module), []byte(apiCommonStr), 0644)
 	if err != nil {
 		println(err.Error())
@@ -1003,20 +1085,16 @@ func genTplFile(base string, pcode *PCode) error {
 		}
 	}
 
-	//tplFiles := []string{tplHead}
-	//tplFiles = append(tplFiles, pcode.proxyAPIsDefs...)
-	//err := ioutil.WriteFile(filePre+"_basic_api.go", []byte(strings.Join(tplFiles, "\n")), 0644)
-	//if err != nil {
-	//	return err
-	//}
-	//
-	//dtoFiles := []string{tplHead}
-	//dtoFiles = append(dtoFiles, pcode.proxySrcPkgAPIStructs...)
-	//err = ioutil.WriteFile(filePre+"_basic_dto.go", []byte(strings.Join(dtoFiles, "\n")), 0644)
-	//if err != nil {
-	//	return err
-	//}
 	return nil
+}
+
+func getApiDtoContent(pcode *PCode) string {
+	module := pcode.p.name
+	if module == "ssku" {
+		return "syntax = \"proto2\";\noption go_package = \"git.garena.com/shopee/bg-logistics/tianlu/wmsv2-basic-v2-protobuf/apps/basic/pbbasicv2/pbssku\";\npackage pbssku;\nimport \"apps/basic/pbbasicv2/pbssku/entity_entity.tpl.proto\";\n\n\n\nmessage  CalculateSkuVolumeUpdateParamItem{\n  optional int64 update_length = 1;\n  optional int64 update_width = 2;\n  optional int64 update_height = 3;\n}\nmessage  SKUTransferObjItem{\n  optional int64 id = 1;\n  optional string sku_id = 2;\n  optional int64 category_id = 3;\n  optional int64 status = 4;\n  optional string original_price = 5;\n  optional string name = 6;\n  optional string description = 7;\n  optional string images = 8;\n  optional string country = 9;\n  optional string currency = 10;\n  optional string whs_id = 11;\n  optional int64 shopid = 12;\n  optional int64 height = 13;\n  optional int64 width = 14;\n  optional int64 length = 15;\n  optional int64 dimension_buffer = 16;\n  optional int64 gross_weight = 17;\n  optional int64 net_weight = 18;\n  optional int64 net_weight_mtime = 19;\n  optional int64 volume = 20;\n  optional int64 pcs = 21;\n  optional int64 is_sn_mgt = 22;\n  optional int64 is_hygroscopic = 23;\n  optional int64 is_danger = 24;\n  optional int64 is_hot = 25;\n  optional int64 is_liquid = 26;\n  optional int64 with_battery = 27;\n  optional int64 retail_price = 28;\n  optional int64 cost_price = 29;\n  optional int64 is_batch_mgt = 30;\n  optional int64 lifecycle = 31;\n  optional int64 advent_lifecycle = 32;\n  optional string supplier_sku_id = 33;\n  optional string upc_barcode2 = 34;\n  optional string supplier_id = 35;\n  optional string partner_sku_id = 36;\n  optional string upc_barcode1 = 37;\n  optional string partner_id = 38;\n  optional int64 cb_option = 39;\n  optional int64 is_synced_scbs = 40;\n  optional string sku_size = 41;\n  optional int64 is_fragile = 42;\n  optional string rule_group = 43;\n  optional int64 ctime = 44;\n  optional int64 mtime = 45;\n  optional int64 is_default = 46;\n  optional int64 is_deprecated = 47;\n  optional int64 is_upc = 48;\n  optional int64 selling_type = 49;\n  optional int64 is_first_time_in = 50;\n  optional int64 sku_item_type = 51;\n  optional string mt_sku_id = 52;\n  optional uint64 merchant_id = 53;\n  optional int64 global_is_medical = 54;\n  optional string global_category_name_l5 = 55;\n  optional string global_category_name_l4 = 56;\n  optional string global_category_name_l3 = 57;\n  optional string global_category_name_l2 = 58;\n  optional string global_category_name_l1 = 59;\n  optional int64 global_category_id_l5 = 60;\n  optional int64 global_category_id_l4 = 61;\n  optional int64 global_category_id_l3 = 62;\n  optional int64 global_category_id_l2 = 63;\n  optional int64 global_category_id_l1 = 64;\n  optional int64 global_is_shelflife = 65;\n  optional int64 global_reject_lifecycle = 66;\n  optional int64 global_promo_reject_lifecycle = 67;\n  optional int64 global_lockup_lifecycle = 68;\n  optional int64 global_block_lifecycle = 69;\n  optional int64 global_reblock_lifecycle = 70;\n  optional int64 category_attr_update_type = 71;\n  optional int64 temperature_control = 72;\n  optional SKUSizeTypeItem sku_size_type = 73;\n  optional SKUWeightTypeItem sku_weight_type = 74;\n  optional int64 is_pouch_packing = 75;\n}\nmessage  SKUSizeTypeItem{\n  optional int64 id = 1;\n  optional string whs_id = 2;\n  optional string country = 3;\n  optional int64 mode = 4;\n  optional int64 param_from = 5;\n  optional int64 param_to = 6;\n  optional string type_id = 7;\n  optional string type_name = 8;\n  optional int64 type_size = 9;\n  optional int64 ctime = 10;\n  optional int64 mtime = 11;\n}\n\nmessage  SKUWeightTypeItem{\n  optional int64 id = 1;\n  optional string whs_id = 2;\n  optional string type_id = 3;\n  optional int64 sku_weight_type = 4;\n  optional string type_name = 5;\n  optional int64 range_from = 6;\n  optional int64 range_to = 7;\n  optional int64 is_default = 8;\n  optional int64 ctime = 9;\n  optional int64 mtime = 10;\n}\nmessage  SkuNameDescTransformFindSkuDetailItem{\n  optional string sku_id = 1;\n  optional int64 sku_id_field_index = 2;\n  optional int64 sku_name_field_index = 3;\n  optional int64 sku_desc_field_index = 4;\n}\nmessage  TransformSkusNameDescOptionItem{\n  optional int64 timeout = 1;\n}\nmessage  CategoryCacheItem{\n  repeated MapCategoryTreeItem category_tree_cache = 1;\n  repeated MapSKULifecycleRuleItemList life_cycle_rule_item_cache = 2;\n}\nmessage  GetScbsSkuInfosItemItem{\n  optional string region = 1;\n  optional string sku_id = 2;\n  optional int64 net_weight = 3;\n  optional int64 gross_weight = 4;\n  optional int64 volume = 5;\n  optional int64 pcs = 6;\n  optional int64 is_sn_mgt = 7;\n  optional int64 temperature_control = 8;\n  optional int64 is_hygroscopic = 9;\n  optional int64 is_danger = 10;\n  optional int64 is_liquid = 11;\n  optional int64 is_fragile = 12;\n  optional int64 with_battery = 13;\n  optional int64 is_hot = 14;\n  optional int64 is_medical = 15;\n  optional string prod_expiry_date_format = 16;\n  optional int64 is_shelflife = 17;\n  optional int64 reject_lifecycle = 18;\n  optional int64 promo_reject_lifecycle = 19;\n  optional int64 lockup_lifecycle = 20;\n  optional int64 advent_lifecycle = 21;\n  optional int64 block_lifecycle = 22;\n  optional int64 reblock_lifecycle = 23;\n  optional int64 height = 24;\n  optional int64 width = 25;\n  optional int64 length = 26;\n  optional int64 lifecycle = 27;\n  optional int64 version = 28;\n}\nmessage  SkuLifeCycleObjItem{\n  optional int64 reject_lifecycle = 1;\n  optional int64 promo_reject_lifecycle = 2;\n  optional int64 lockup_lifecycle = 3;\n  optional int64 block_lifecycle = 4;\n  optional int64 reblock_lifecycle = 5;\n}\n\nmessage MapCategoryTreeItem{\n  optional int64  id = 1;\n  optional CategoryTreeItem  item = 2;\n}\n\nmessage LifeCycleRuleItem  {\n  optional int64   id = 1;\n  optional         string  rule_id = 2;\n  optional          int64   type = 3;\n  optional     int64   mgt_level = 4;\n  optional   int64   from_range = 5;\n  optional    int64   to_range = 6;\n  optional     int64   value = 7;\n  optional     int64   ctime = 8;\n  optional     int64   mtime = 9;\n}\nmessage MapSKULifecycleRuleItemList{\n  optional  string sku_id = 1;\n  repeated LifeCycleRuleItem list = 2;\n}"
+	}
+	apiCommonStr := strings.Join(pcode.innerStructsPbTpls, "\n")
+	return apiCommonStr
 }
 
 //request and resp
@@ -1617,10 +1695,10 @@ func genSrcProxyCodeFile(conf *CodeGenConf, pcode *PCode) error {
 	proxyMain = append(proxyMain, fmt.Sprintf("\t %sProxyAPI wmsbasic.%sAPI", lowerFirstChar(conf.targetStruct), upFirstChar(module)))
 	proxyMain = append(proxyMain, "}")
 
-	//err = ioutil.WriteFile(filePre+"_proxy_main.go", []byte(strings.Join(proxyMain, "\n")), 0644)
-	//if err != nil {
-	//	return err
-	//}
+	err = ioutil.WriteFile(filePre+"_proxy_main.go", []byte(strings.Join(proxyMain, "\n")), 0644)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -3875,6 +3953,12 @@ func (b API) Module() string {
 }
 
 func (b API) isNeedProxy() bool {
+	if itemMap, ok := ignoreAPIsMap[b.Module()]; ok {
+		isIgnoreAPI := itemMap[b.Method]
+		if isIgnoreAPI {
+			return false
+		}
+	}
 
 	if len(b.ReqFields) > 0 && !b.ReqFields[0].isContext() {
 		return false
@@ -4190,6 +4274,13 @@ var parseReqItemsCodeMap = map[string]map[string]string{
 		"toGetSKUsDateFormatMapPbResp":                      "func toGetSKUsDateFormatMapPbResp(ret1 map[string]*entity.SkuProdExpiryDateFormatTab) (*pbmsku.GetSKUsDateFormatMapResponse, *wmserror.WMSError) {\n\tret1Item := []*pbmsku.MapSkuProdExpiryDateFormatTabItem{}\n\n\tfor skuID, dbItem := range ret1 {\n\t\titem:=&pbmsku.SkuProdExpiryDateFormatTabItem{}\n\t\tif jsErr := copier.Copy(dbItem, &item); jsErr != nil {\n\t\t\treturn nil, wmserror.NewError(constant.ErrJsonDecodeFail, jsErr.Error())\n\t\t}\n\t\tret1Item = append(ret1Item, &pbmsku.MapSkuProdExpiryDateFormatTabItem{\n\t\t\tSkuId: convert.String(skuID),\n\t\t\tItem:  item,\n\t\t})\n\t}\n\t\n\tresp := &pbmsku.GetSKUsDateFormatMapResponse{\n\t\tRet1: ret1Item,\n\t}\n\treturn resp, nil\n}",
 	},
 }
+var ignoreAPIsMap = map[string]map[string]bool{
+	"ssku": {
+		"GetHighValueRuleBySkuAndWhsIDByHighValueMap": true,
+		"TransformSkusNameDescInterface":              true,
+		"UpdateSkusPretreatment":                      true,
+	},
+}
 
 var tplCodeMap = map[string]map[string]string{
 	"msku": {
@@ -4198,6 +4289,12 @@ var tplCodeMap = map[string]map[string]string{
 		"GetAllCategoryMapByCountryResponse":          "message GetAllCategoryMapByCountryResponse{\nrepeated MapCategoryTreeItem ret1 = 1;\n}",
 		"GetSKUsDateFormatMapResponse":                "message GetSKUsDateFormatMapResponse{\nrepeated MapSkuProdExpiryDateFormatTabItem ret1 = 1;\n}",
 		"GetParentCategoryIDChildCategoryMapResponse": "message GetParentCategoryIDChildCategoryMapResponse{\nrepeated MapCategoryTreeItemList ret1 = 1;\n}",
+	},
+	"ssku": {
+		"CalculateSkuLifecycleGlobalResponse": "message CalculateSkuLifecycleGlobalResponse{\n  optional bool ret1 = 1;\n  optional SkuLifeCycleObjItem ret2 = 2;\n}",
+		"TransformSkusNameDescRequest":        "// POST\nmessage TransformSkusNameDescRequest{\noptional string region = 1;\noptional string language = 2;\nrepeated string sku_i_ds = 3;\noptional TransformSkusNameDescOptionItem opts = 4;\n}",
+		"TransformSkusNameDescResponse":       "message TransformSkusNameDescResponse{\nrepeated MapSkuTranferItem ret1 = 1;\n}",
+		"UpdateSkusResponse":                  "message UpdateSkusResponse{\n  repeated MapSkuUpdateChangeItem ret1 = 1;\n}",
 	},
 }
 var srcProxyCodeMap = map[string]map[string]string{
