@@ -1,6 +1,7 @@
 package astdata
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"github.com/TwiN/go-color"
@@ -66,6 +67,11 @@ type CodeGenConf struct {
 	callMngMap              map[string]string
 	targetStruct            string
 	targetStructs           []string
+	isViewType              bool
+}
+
+func (c CodeGenConf) isVew() bool {
+	return c.isViewType
 }
 
 func TestBasicPkgs(t *testing.T) {
@@ -119,7 +125,8 @@ func TestWMSV2(t *testing.T) {
 	packageMap := map[string]*Package{}
 	//genConf := getMsizeConf()
 	//genConf := getMHighbvalueConf()
-	genConf := getSSkuExportConf()
+	//genConf := getSSkuExportConf()
+	genConf := getVHighbvalueConf()
 	//genConf.genTplFile = true
 	//genConf.genProxyWMSBasicAPICode = true
 	genConf.genWMSBasicV2APICode = true
@@ -129,7 +136,13 @@ func TestWMSV2(t *testing.T) {
 		t.Error(err.Error())
 	}
 	p := packageMap[genConf.name]
-	pcode := parsePCode(p, packageMap, genConf)
+	var pcode = &PCode{}
+	if genConf.isVew() {
+		pcode = parseViewPCode(p, packageMap, genConf)
+	} else {
+		pcode = parsePCode(p, packageMap, genConf)
+	}
+
 	pcode.conf = genConf
 	pcode.pkgMap = packageMap
 
@@ -168,10 +181,15 @@ func TestWMSV2(t *testing.T) {
 	if genConf.genWMSBasicV2APICode {
 		//wmsbasicv2 api
 		pbPkg := packageMap[genConf.pbSrcBase]
-		err = genBasicV2APICodeFile(genConf.basicV2APIPkg, genConf.basicV2ViewType, genConf.basicV2APICodeBase, pbPkg, pcode, packageMap)
+		if genConf.isVew() {
+			err = genViewBasicV2APICodeFile(genConf.basicV2APIPkg, pcode, genConf)
+		} else {
+			err = genBasicV2APICodeFile(genConf.basicV2APIPkg, genConf.basicV2ViewType, genConf.basicV2APICodeBase, pbPkg, pcode, packageMap)
+		}
 		if err != nil {
 			t.Error(err.Error())
 		}
+
 	}
 
 	if genConf.genSrcProxyCodeFile {
@@ -339,6 +357,32 @@ func getMHighbvalueConf() *CodeGenConf {
 	return genConf
 }
 
+func getVHighbvalueConf() *CodeGenConf {
+	callMngMap := map[string]string{
+		"HighValueConfigView": "highValueConfigView",
+	}
+	var genConf = &CodeGenConf{
+		genTplFile:              false,
+		genProxyWMSBasicAPICode: false,
+		genWMSBasicV2APICode:    false,
+		genSrcProxyCodeFile:     false,
+		name:                    "apps/config/view/vhighvalue",
+		srcBase:                 "/Users/yunfeizhu/Code/golang/wms-v2/apps/config/view/vhighvalue",
+		pbBase:                  "/Users/yunfeizhu/Code/golang/wmsv2-basic-v2-protobuf/apps/basic/pbbasicv2",
+		pbSrcBase:               "apps/basic/pbbasicv2/pbmhighvalue",
+		basicV2APICodeBase:      "/Users/yunfeizhu/Code/golang/wmsv2-basic-v2/apps/config/view/vhighvalue",
+		basicV2APIPkg:           "vhighvalue",
+		basicV2ViewType:         "HighValueConfigView",
+		codeBase:                "/Users/yunfeizhu/Code/golang/wms-v2/apps/wmslib/wmsbasic",
+		proxyStructType:         "HighValueManager",
+		callMngMap:              callMngMap,
+		targetStruct:            "HighValueConfigView",
+		targetStructs:           []string{"HighValueConfigView"},
+		isViewType:              true,
+	}
+	return genConf
+}
+
 func getMSKUConf() *CodeGenConf {
 	callMngMap := map[string]string{
 		"SKUManager": "skuManager",
@@ -473,78 +517,75 @@ func genProxyAPICodeFile(genConf *CodeGenConf, packageMap map[string]*Package, p
 
 	packageHead := "package wmsbasic"
 	apiFiles := []string{packageHead}
+	var dtoFiles []string
 
-	apiFiles = append(apiFiles, buildPackageProxyBasicAPI(pcode)...)
+	if genConf.isVew() {
+		apiFiles = append(apiFiles, buildViewPackageProxyBasicAPI(pcode)...)
+	} else {
+		apiFiles = append(apiFiles, buildPackageProxyBasicAPI(pcode)...)
+	}
 	err = ioutil.WriteFile(filePre+"_basic_api.go", []byte(strings.Join(apiFiles, "\n")), 0644)
 	if err != nil {
 		return err
 	}
 
-	dtoFiles := []string{packageHead}
-	dtoFiles = append(dtoFiles, pcode.proxySrcPkgAPIStructs...)
-	if module == "msku" {
-		dtoFiles = append(dtoFiles, "type ExportShopRequestItem struct {\n\tShopID   int64 `json:\"shop_id\"`\n\tCbOption int64 `json:\"cb_option\"`\n\tIsSnMgt  int64 `json:\"is_sn_mgt\"`\n\tStatus   int64 `json:\"status\"`\n}\n")
-	}
-	err = ioutil.WriteFile(filePre+"_basic_dto.go", []byte(strings.Join(dtoFiles, "\n")), 0644)
-	if err != nil {
-		return err
+	if !genConf.isVew() {
+		dtoFiles := []string{packageHead}
+		dtoFiles = append(dtoFiles, pcode.proxySrcPkgAPIStructs...)
+		if module == "msku" {
+			dtoFiles = append(dtoFiles, "type ExportShopRequestItem struct {\n\tShopID   int64 `json:\"shop_id\"`\n\tCbOption int64 `json:\"cb_option\"`\n\tIsSnMgt  int64 `json:\"is_sn_mgt\"`\n\tStatus   int64 `json:\"status\"`\n}\n")
+		}
+		err = ioutil.WriteFile(filePre+"_basic_dto.go", []byte(strings.Join(dtoFiles, "\n")), 0644)
+		if err != nil {
+			return err
+		}
 	}
 
 	pkgName := module
-	receiverPrex := fmt.Sprintf("func (m *%sBasicAPI)", upFirstChar(pkgName))
-	var basicAPIProxyBodys string
-	for _, basicapi := range pcode.basicAPIPbsMap {
-		paramSignStr := basicapi.api.methodReqSign()
-		returnSign := basicapi.api.methodReturnSign()
-		head := fmt.Sprintf("%s%s (%s)%s {", receiverPrex, basicapi.api.Method, paramSignStr, returnSign)
-		body := basicapi.api.proxyBasicFuncBodyWithConveted(pbSrcPkg, packageMap)
-
-		basicAPIProxyBodys += head + "\n" + body
-		println(head, "\n", body)
-
-	}
-
-	dtoFiles = []string{"package wmsbasic", pcode.genProxyAPIStructDefAndConstruct(), basicAPIProxyBodys}
+	dtoFiles = genBasicAPIImplCode(genConf, pkgName, pcode, pbSrcPkg, packageMap)
 	err = ioutil.WriteFile(filePre+"_basic_api_impl.go", []byte(strings.Join(dtoFiles, "\n")), 0644)
 	if err != nil {
 		return err
 	}
 
-	var helpers []string
-	for _, basicapi := range pcode.basicAPIPbsMap {
+	if !genConf.isVew() {
+		var helpers []string
+		for _, basicapi := range pcode.basicAPIPbsMap {
 
-		api := basicapi.api
-		//head := fmt.Sprintf("func to%sPbReq(%s)(*%s,*wmserror.WMSError) {", api.Method, api.methodReqAliasWithoutCtx(true), basicapi.api.apiPbReqType())
-		//head = api.convertToPbReqSign()
-		body := api.proxyBasicConvertReqBody(pbSrcPkg, packageMap)
-		//curBody := head + "\n" + body + "\n}"
-		helpers = append(helpers, body)
-
-		//head = fmt.Sprintf("func parse%sPbResp(resp *%s) %s{", api.Method, api.apiPbRespType(), basicapi.api.methodReturnSign())
-		if api.isNeedViewConvertResp() {
-			body = api.proxyBasicConvertRespBody(pbSrcPkg, packageMap)
+			api := basicapi.api
+			//head := fmt.Sprintf("func to%sPbReq(%s)(*%s,*wmserror.WMSError) {", api.Method, api.methodReqAliasWithoutCtx(true), basicapi.api.apiPbReqType())
+			//head = api.convertToPbReqSign()
+			body := api.proxyBasicConvertReqBody(pbSrcPkg, packageMap)
+			//curBody := head + "\n" + body + "\n}"
 			helpers = append(helpers, body)
+
+			//head = fmt.Sprintf("func parse%sPbResp(resp *%s) %s{", api.Method, api.apiPbRespType(), basicapi.api.methodReturnSign())
+			if api.isNeedViewConvertResp() {
+				body = api.proxyBasicConvertRespBody(pbSrcPkg, packageMap)
+				helpers = append(helpers, body)
+			}
 		}
-	}
+		dtoFiles = []string{"package wmsbasic", strings.Join(helpers, "\n")}
+		err = ioutil.WriteFile(filePre+"_basic_dto_converter.go", []byte(strings.Join(dtoFiles, "\n")), 0644)
+		if err != nil {
+			return err
+		}
 
-	dtoFiles = []string{"package wmsbasic", strings.Join(helpers, "\n")}
-	err = ioutil.WriteFile(filePre+"_basic_dto_converter.go", []byte(strings.Join(dtoFiles, "\n")), 0644)
-	if err != nil {
-		return err
-	}
-
-	dtoFiles = []string{"package " + genConf.basicV2APIPkg, strings.Join(helpers, "\n")}
-	helperPref := fStr("%s/%s", genConf.basicV2APICodeBase, module)
-	err = ioutil.WriteFile(helperPref+"_dto_converter.go", []byte(strings.Join(dtoFiles, "\n")), 0644)
-	if err != nil {
-		return err
+		dtoFiles = []string{"package " + genConf.basicV2APIPkg, strings.Join(helpers, "\n")}
+		helperPref := fStr("%s/%s", genConf.basicV2APICodeBase, module)
+		err = ioutil.WriteFile(helperPref+"_dto_converter.go", []byte(strings.Join(dtoFiles, "\n")), 0644)
+		if err != nil {
+			return err
+		}
 	}
 
 	var endpoints = []string{}
 	endpoints = append(endpoints, fmt.Sprintf("// %s endpoint", module))
 	endpoints = append(endpoints, "var (")
-	for _, api := range pcode.basicAPIPbsMap {
-		endpoints = append(endpoints, fmt.Sprintf("%s WmsBasicApi = \"%s\"", api.api.endpointEnum(), api.Path))
+	for _, api := range pcode.viewHanders {
+		Path := "openapi/basicv2/" + genConf.name + "/" + api.Method
+
+		endpoints = append(endpoints, fmt.Sprintf("%s WmsBasicApi = \"%s\"", endPointEnum(module, api.Method), Path))
 	}
 	endpoints = append(endpoints, ")")
 
@@ -555,6 +596,50 @@ func genProxyAPICodeFile(genConf *CodeGenConf, packageMap map[string]*Package, p
 		return err
 	}
 	return nil
+}
+
+func genBasicAPIImplCode(conf *CodeGenConf, pkgName string, pcode *PCode, pbSrcPkg *Package, packageMap map[string]*Package) []string {
+
+	receiverPrex := fmt.Sprintf("func (m *%sBasicAPI)", upFirstChar(pkgName))
+
+	if conf.isVew() {
+		apiImp := []string{"package wmsbasic", pcode.genProxyAPIStructDefAndConstruct()}
+		for _, handler := range pcode.viewHanders {
+			paramSignType := fmt.Sprintf("ctx context.Context, header *wrapper.ReqHeader, req *%s", handler.PbReqType)
+			returnType := "interface{}, *wmserror.WMSError"
+			head := fmt.Sprintf("%s%s (%s)(%s) {", receiverPrex, handler.Method, paramSignType, returnType)
+
+			body := `	
+	commonReq, err := ToPbBasicCommonReq(header, req)
+	if err != nil {
+		return nil, err.Mark()
+	}
+resp := &%s{}
+	_, err = m.Client.Post(ctx, VhighvalueSearchHighValue, commonReq, resp, DefaultTimeOut)
+	if err != nil {
+		return nil, err.Mark()
+	}
+	return resp, nil
+}`
+			bodyStr := fStr(body, handler.PbRespType)
+
+			apiImp = append(apiImp, head, bodyStr)
+		}
+		return apiImp
+	}
+
+	var basicAPIProxyBodys string
+	for _, basicapi := range pcode.basicAPIPbsMap {
+		paramSignStr := basicapi.api.methodReqSign()
+		returnSign := basicapi.api.methodReturnSign()
+		head := fmt.Sprintf("%s%s (%s)%s {", receiverPrex, basicapi.api.Method, paramSignStr, returnSign)
+		body := basicapi.api.proxyBasicFuncBodyWithConveted(pbSrcPkg, packageMap)
+
+		basicAPIProxyBodys += head + "\n" + body
+	}
+
+	dtoFiles := []string{"package wmsbasic", pcode.genProxyAPIStructDefAndConstruct(), basicAPIProxyBodys}
+	return dtoFiles
 }
 
 func genBasicV2APICodeFile(pkgName string, basicV2ViewType string, base string, pbSrcPkg *Package, pcode *PCode, packageMap map[string]*Package) error {
@@ -590,6 +675,35 @@ func genBasicV2APICodeFile(pkgName string, basicV2ViewType string, base string, 
 	respConverter := genViewHandlersV2ConvertResp(packageHead, sortedAPIList, callMngMap, basicV2ViewType, pbSrcPkg, packageMap, module)
 
 	err = ioutil.WriteFile(filePre+"_proxy_handler_resp_converter.go", []byte(strings.Join(respConverter, "\n")), 0644)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func genViewBasicV2APICodeFile(pkgName string, pcode *PCode, conf *CodeGenConf) error {
+	module := pcode.p.name
+	var err error
+	filePre := conf.basicV2APICodeBase + "/" + module
+
+	packageHead := fmt.Sprintf("package %s", pkgName)
+	apiFiles := []string{packageHead}
+
+	head := "func init%sProxyHandler(router *wrapper.BasicRouterWrapper, view *%s) {\n"
+	initHead := fStr(head, upFirstChar(module), conf.basicV2ViewType)
+	apis := []string{initHead}
+
+	for _, handler := range pcode.viewHanders {
+		apiFormat := "\twmsv2proxy.RegisterProxyViewHandler(router, \"%s\", view.%s, &%s{})\n"
+		path := "openapi/basicv2/" + conf.name + "/" + handler.Method
+		apis = append(apis, fStr(apiFormat, path, handler.Method, handler.PbReqType))
+	}
+	apis = append(apis, "}")
+
+	apiFiles = append(apiFiles, apis...)
+
+	err = ioutil.WriteFile(filePre+"_proxy_handler.go", []byte(strings.Join(apiFiles, "\n")), 0644)
 	if err != nil {
 		return err
 	}
@@ -1698,6 +1812,14 @@ func genSrcProxyCodeFile(conf *CodeGenConf, pcode *PCode) error {
 	module := pcode.p.name
 	filePre := conf.srcBase + "/" + module
 
+	if conf.isVew() {
+		return genViewSrcProxyFile(conf, pcode, module, filePre)
+	}
+
+	return genNonViewSrcProxyFile(conf, pcode, module, filePre)
+}
+
+func genNonViewSrcProxyFile(conf *CodeGenConf, pcode *PCode, module string, filePre string) error {
 	packageHead := fmt.Sprintf("package %s", module)
 	apiFiles := []string{packageHead}
 	apiFiles = append(apiFiles, pcode.srcPkgProxyFuncs...)
@@ -1722,6 +1844,86 @@ func genSrcProxyCodeFile(conf *CodeGenConf, pcode *PCode) error {
 	proxyMain = append(proxyMain, "}")
 
 	err = ioutil.WriteFile(filePre+"_proxy_main.go", []byte(strings.Join(proxyMain, "\n")), 0644)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func genViewSrcProxyFile(conf *CodeGenConf, pcode *PCode, module string, filePre string) error {
+	packageHead := fmt.Sprintf("package %s", module)
+	apiFiles := []string{packageHead}
+	for _, handler := range pcode.viewHanders {
+		funcBody := fStr(`func (v *%sProxy) %s(ctx context.Context, header *wrapper.ReqHeader, req interface{}) (interface{}, *wmserror.WMSError) {
+	var ret0 interface{}
+	var ret1 *wmserror.WMSError
+	originHandler := func(ctx context.Context) {
+		ret0, ret1 = v.originView.%s(ctx, header, req)
+	}
+	proxyHandler := func(ctx context.Context) *wmserror.WMSError {
+		pbReq := req.(*%s)
+		ret0, ret1 = v.proxyAPI.%s(ctx, header, pbReq)
+		return ret1
+	}
+	endPoint := "%s"
+	getBasicHandler()(ctx, endPoint, originHandler, proxyHandler)
+	return ret0, ret1
+}
+`, conf.basicV2ViewType, handler.Method, handler.Method, handler.PbReqType, handler.Method, handler.Method)
+		apiFiles = append(apiFiles, funcBody)
+	}
+	//apiFiles = append(apiFiles, pcode.srcPkgProxyFuncs...)
+	err := ioutil.WriteFile(filePre+"_proxy_handler.go", []byte(strings.Join(apiFiles, "\n")), 0644)
+	if err != nil {
+		return err
+	}
+
+	//proxy main.go
+	proxyMain := []string{packageHead}
+
+	val := "const module = \"%s\"\n\nvar apiIdempotent = wmsbasicproxy.APIIdempotent()\n\nfunc getBasicHandler() wmsbasicproxy.BasicProxyHandler {\n\treturn wmsbasicproxy.GetModuleHandler(module)\n}\n"
+	proxyMain = append(proxyMain, fmt.Sprintf(val, module))
+	//
+	//type HighValueManagerProxy struct {
+	//	highValueManager         HighValueManager
+	//	highValueManagerProxyAPI wmsbasic.MhighvalueAPI
+	//}
+	proxyMain = append(proxyMain, fmt.Sprintf("type %sProxy struct{", upFirstChar(conf.targetStruct)))
+	proxyMain = append(proxyMain, fmt.Sprintf("\t %s %s", lowerFirstChar(conf.targetStruct), conf.targetStruct))
+	proxyMain = append(proxyMain, fmt.Sprintf("\t %sProxyAPI wmsbasic.%sAPI", lowerFirstChar(conf.targetStruct), upFirstChar(module)))
+	proxyMain = append(proxyMain, "}")
+
+	proxyMainStr := fStr(`package %s
+
+import (
+	"git.garena.com/shopee/bg-logistics/tianlu/wms-v2/apps/wmslib/wmsbasic"
+	"git.garena.com/shopee/bg-logistics/tianlu/wms-v2/apps/wmslib/wmsbasicproxy"
+)
+
+const module = "%s"
+
+var apiIdempotent = wmsbasicproxy.APIIdempotent()
+
+func getBasicHandler() wmsbasicproxy.BasicProxyHandler {
+	return wmsbasicproxy.GetModuleHandler(module)
+}
+`, module)
+	proxyStructStr := fStr(`type %sProxy struct {
+	originView         *%s
+	proxyAPI wmsbasic.%sAPI
+}
+
+func New%sProxy() *%sProxy {
+	return &%sProxy{
+		originView:         New%s(),
+		proxyAPI: wmsbasic.New%sAPI(),
+	}
+}
+`, conf.basicV2ViewType, conf.basicV2ViewType, upFirstChar(module), conf.basicV2ViewType, conf.basicV2ViewType, conf.basicV2ViewType, conf.basicV2ViewType, upFirstChar(module))
+
+	newProxyMain := []string{proxyMainStr, proxyStructStr}
+
+	err = ioutil.WriteFile(filePre+"_proxy_main.go", []byte(strings.Join(newProxyMain, "\n")), 0644)
 	if err != nil {
 		return err
 	}
@@ -1765,6 +1967,7 @@ type PCode struct {
 	ouStructTplDbsMaps map[string][]string
 	conf               *CodeGenConf
 	pkgMap             map[string]*Package
+	viewHanders        map[string]*ViewHandler
 }
 
 func (pcode PCode) genProxyAPIStructDefAndConstruct() string {
@@ -1886,6 +2089,168 @@ func parsePCode(p *Package, packageMap map[string]*Package, conf *CodeGenConf) *
 
 }
 
+func parseViewPCode(p *Package, packageMap map[string]*Package, conf *CodeGenConf) *PCode {
+	code := &PCode{
+		p: p,
+	}
+	inStructSet := hashset.New()
+	outStructSet := hashset.New()
+	apis := parseFuncs(p, inStructSet, outStructSet, packageMap)
+
+	viewHandlers := parsePkgViewHandler(p)
+	code.viewHanders = viewHandlers
+	//isNeedProxyMethod := hashset.New()
+	//for _, s := range viewHandlers["view"] {
+	//
+	//}
+	//println(ToPrettyJSON(viewHandlers))
+	//panic("1")
+
+	var funcDefs []string
+	var basicAPIs []string
+	var basicAPIReqs []string
+	var basicAPIPbs []*BASICAPI
+
+	var apiFuncDefsMap = map[SrcEndPoint]string{}
+	var basicAPIsMap = map[SrcEndPoint]string{}
+	var basicAPIReqsMap = map[SrcEndPoint]string{}
+	var basicAPIPbsMap = map[SrcEndPoint]*BASICAPI{}
+	//sort
+	sort.Slice(apis, func(i, j int) bool {
+		return apis[i].Method < apis[j].Method
+	})
+
+	for _, api := range apis {
+		if conf.isVew() {
+			if !api.needProxyViewHandler(viewHandlers) {
+				continue
+			}
+
+		} else {
+
+			if !isExported(api.Method) {
+				//println("method is not exported: ", api.Method)
+				continue
+			}
+
+			if !api.isNeedProxy() {
+				println("no need to proxy", api.Method)
+				continue
+			}
+			//isNeedHandler := isNeedToHandler(api, conf)
+			//if !isNeedHandler {
+			if !api.isNeedHandler(conf) {
+				receiverName := api.ReceiverName
+				println(fmt.Sprintf("receiverName %s is no need to handler", receiverName))
+				continue
+			}
+		}
+
+		endpoint := NewSrcEndPoint(api.Pkg.name, api.Method)
+		funcDefs = append(funcDefs, api.proxyFuncBody2())
+		apiFuncDefsMap[endpoint] = api.proxyFuncBody2()
+
+		basicAPIs = append(basicAPIs, api.BasicAPIInterfaceSignWithComment())
+		basicAPIsMap[endpoint] = api.BasicAPIInterfaceSignWithComment()
+
+		basicAPIReqs = append(basicAPIReqs, api.proxyPbAPIReq())
+		basicAPIReqsMap[endpoint] = api.proxyPbAPIReq()
+
+		basicAPIPbs = append(basicAPIPbs, api.proxyPbAPI())
+		basicAPIPbsMap[endpoint] = api.proxyPbAPI()
+	}
+
+	code.srcPkgProxyFuncMap = apiFuncDefsMap
+	code.basicAPIDefMap = basicAPIsMap
+
+	code.basicAPIReqsMap = basicAPIReqsMap
+	code.basicAPIPbsMap = basicAPIPbsMap
+
+	//prttryStr("func body", strings.Join(funcDefs, "\n"))
+	code.proxyAPIsDefs = buildPackageProxyBasicAPI(code)
+	code.basicAPIPbs = basicAPIPbs
+	//源包
+	code.srcPkgProxyFuncs = funcDefs
+	//代理包
+	code.proxySrcPkgAPIStructs = pReqItemStrs(apis)
+
+	//prttryStr("basic api ", strings.Join(basicAPIs, "\n\n"))
+	//prttryStr("basic api req", strings.Join(basicAPIReqs, "\n\n"))
+	var outStructTypeList []string
+	var inStructTypeList []string
+	for _, i := range inStructSet.Values() {
+		ftype := i.(string)
+		if isNormalType(ftype) || strings.Contains(ftype, ".") {
+			continue
+		}
+
+		inStructTypeList = append(inStructTypeList, ftype)
+		//println(p.name, " inner struct", ftype)
+	}
+	code.innerStructTypes = inStructTypeList
+
+	checkNeedAddJsonTag(p, inStructTypeList)
+
+	for _, i := range outStructSet.Values() {
+		//println(p.name, " out struct", i.(string))
+		outStructTypeList = append(outStructTypeList, i.(string))
+	}
+	code.outStructList = outStructTypeList
+
+	return code
+
+}
+
+type ViewHandler struct {
+	Method      string
+	PbReqType   string
+	PbRespType  string
+	HandlerType string
+}
+
+func parsePkgViewHandler(p *Package) map[string]*ViewHandler {
+	var viewHanlers = map[string]*ViewHandler{}
+	var re = regexp.MustCompile(`router.*URL\((.*)\)`)
+	for _, file := range p.files {
+		for _, l := range readLines(file) {
+			if strings.Contains(l, ".Register") {
+				defLine := strings.TrimSpace(l)
+
+				//findAllString := re.FindAllString(l, -1)
+				findAllString := re.FindAllStringSubmatch(defLine, -1)
+				if len(findAllString) > 0 {
+					for _, match := range findAllString[0] {
+						segs := strings.Split(match, ",")
+						method := strings.Split(segs[1], ".")[1]
+						pbReqType := strings.ReplaceAll(strings.ReplaceAll(segs[2], "&", ""), "{}", "")
+						pbRespType := strings.ReplaceAll(pbReqType, "Request", "Response")
+						handler := &ViewHandler{
+							Method:      method,
+							PbReqType:   strings.TrimSpace(pbReqType),
+							PbRespType:  strings.TrimSpace(pbRespType),
+							HandlerType: "view",
+						}
+						viewHanlers[method] = handler
+
+					}
+				}
+			}
+		}
+	}
+	return viewHanlers
+}
+
+func readLines(file *File) []string {
+	scanner := bufio.NewScanner(strings.NewReader(file.Source()))
+	scanner.Split(bufio.ScanLines)
+	var lines []string
+	for scanner.Scan() {
+		scanner.Text()
+		lines = append(lines, scanner.Text())
+	}
+	return lines
+}
+
 func checkNeedAddJsonTag(p *Package, inStructTypeList []string) {
 	needAddJsonTagTypes := []string{}
 	for _, ftype := range inStructTypeList {
@@ -1929,6 +2294,25 @@ func buildPackageProxyBasicAPI(pcode *PCode) []string {
 	var basicAPISign []string
 	for _, sign := range pcode.basicAPIDefMap {
 		basicAPISign = append(basicAPISign, sign)
+	}
+	sort.Slice(basicAPISign, func(i, j int) bool {
+		return basicAPISign[i] < basicAPISign[j]
+	})
+
+	var wmsbasicAPI []string
+	wmsbasicAPI = append(wmsbasicAPI, fmt.Sprintf("type %sAPI interface {", upFirstChar(pcode.p.name)))
+	wmsbasicAPI = append(wmsbasicAPI, basicAPISign...)
+	wmsbasicAPI = append(wmsbasicAPI, "}")
+	return wmsbasicAPI
+}
+
+func buildViewPackageProxyBasicAPI(pcode *PCode) []string {
+	var basicAPISign []string
+	for _, h := range pcode.viewHanders {
+		if h.HandlerType == "view" {
+			api := fStr("%s(ctx context.Context, header *wrapper.ReqHeader, req *%s)(interface{}, *wmserror.WMSError)", h.Method, h.PbReqType)
+			basicAPISign = append(basicAPISign, api)
+		}
 	}
 	sort.Slice(basicAPISign, func(i, j int) bool {
 		return basicAPISign[i] < basicAPISign[j]
@@ -3095,8 +3479,12 @@ func (api *API) apiPbRespType() string {
 }
 
 func (api *API) endpointEnum() string {
-	endPointEnum := upFirstChar(api.Pkg.name) + api.Method
-	return endPointEnum
+	module := api.Pkg.name
+	return endPointEnum(module, api.Method)
+}
+
+func endPointEnum(module string, method string) string {
+	return upFirstChar(module) + method
 }
 
 func dealCopyErrLines(retItemVars []string) []string {
@@ -4082,6 +4470,11 @@ func (b API) isNeedViewConvertReq() bool {
 }
 func (b API) isNeedViewConvertResp() bool {
 	return len(b.RespItems) > 1
+}
+
+func (b API) needProxyViewHandler(viewHandler map[string]*ViewHandler) bool {
+	_, exist := viewHandler[b.Method]
+	return exist
 }
 
 var matchFirstCap = regexp.MustCompile("(.)([A-Z][a-z]+)")
