@@ -68,10 +68,15 @@ type CodeGenConf struct {
 	targetStruct            string
 	targetStructs           []string
 	isViewType              bool
+	isViewOthersType        bool
 }
 
 func (c CodeGenConf) isVew() bool {
 	return c.isViewType
+}
+
+func (c CodeGenConf) isViewOthers() bool {
+	return c.isViewOthersType
 }
 
 func TestBasicPkgs(t *testing.T) {
@@ -126,7 +131,10 @@ func TestWMSV2(t *testing.T) {
 	//genConf := getMsizeConf()
 	//genConf := getMHighbvalueConf()
 	//genConf := getSSkuExportConf()
-	genConf := getVHighbvalueConf()
+	//genConf := getVlifecycleConf()
+	//genConf := getVHighbvalueConf()
+	//genConf := getVsizetypeeConf()
+	genConf := getVSKUConf()
 	//genConf.genTplFile = true
 	//genConf.genProxyWMSBasicAPICode = true
 	genConf.genWMSBasicV2APICode = true
@@ -139,9 +147,12 @@ func TestWMSV2(t *testing.T) {
 	var pcode = &PCode{}
 	if genConf.isVew() {
 		pcode = parseViewPCode(p, packageMap, genConf)
+	} else if genConf.isViewOthers() {
+		pcode = parseViewOthersPCode(p, packageMap, genConf)
 	} else {
 		pcode = parsePCode(p, packageMap, genConf)
 	}
+	println(ToPrettyJSON(pcode.viewHanders))
 
 	pcode.conf = genConf
 	pcode.pkgMap = packageMap
@@ -172,7 +183,11 @@ func TestWMSV2(t *testing.T) {
 
 	if genConf.genProxyWMSBasicAPICode {
 		//wmsbasic api
-		err = genProxyAPICodeFile(genConf, packageMap, pcode)
+		if genConf.isViewOthersType {
+			err = genNontViewProxyAPICodeFile(genConf, packageMap, pcode)
+		} else {
+			err = genProxyAPICodeFile(genConf, packageMap, pcode)
+		}
 		if err != nil {
 			t.Error(err.Error())
 		}
@@ -183,6 +198,8 @@ func TestWMSV2(t *testing.T) {
 		pbPkg := packageMap[genConf.pbSrcBase]
 		if genConf.isVew() {
 			err = genViewBasicV2APICodeFile(genConf.basicV2APIPkg, pcode, genConf)
+		} else if genConf.isViewOthers() {
+			err = genViewAsyncBasicV2APICodeFile(genConf.basicV2APIPkg, pcode, genConf)
 		} else {
 			err = genBasicV2APICodeFile(genConf.basicV2APIPkg, genConf.basicV2ViewType, genConf.basicV2APICodeBase, pbPkg, pcode, packageMap)
 		}
@@ -357,6 +374,59 @@ func getMHighbvalueConf() *CodeGenConf {
 	return genConf
 }
 
+func getVsizetypeeConf() *CodeGenConf {
+	callMngMap := map[string]string{
+		"HighValueConfigView": "highValueConfigView",
+	}
+	var genConf = &CodeGenConf{
+		genTplFile:              false,
+		genProxyWMSBasicAPICode: false,
+		genWMSBasicV2APICode:    false,
+		genSrcProxyCodeFile:     false,
+		name:                    "apps/config/view/vsizetype",
+		srcBase:                 "/Users/yunfeizhu/Code/golang/wms-v2/apps/config/view/vsizetype",
+		pbBase:                  "/Users/yunfeizhu/Code/golang/wmsv2-basic-v2-protobuf/apps/basic/pbbasicv2",
+		pbSrcBase:               "apps/basic/pbbasicv2/pbmhighvalue",
+		basicV2APICodeBase:      "/Users/yunfeizhu/Code/golang/wmsv2-basic-v2/apps/config/view/vsizetype",
+		basicV2APIPkg:           "vsizetype",
+		basicV2ViewType:         "SizeTypeView",
+		codeBase:                "/Users/yunfeizhu/Code/golang/wms-v2/apps/wmslib/wmsbasic",
+		proxyStructType:         "HighValueManager",
+		callMngMap:              callMngMap,
+		targetStruct:            "SizeTypeView",
+		targetStructs:           []string{"SizeTypeView"},
+		isViewType:              true,
+	}
+	return genConf
+}
+
+func getVSKUConf() *CodeGenConf {
+	callMngMap := map[string]string{
+		"HighValueConfigView": "highValueConfigView",
+	}
+	var genConf = &CodeGenConf{
+		genTplFile:              false,
+		genProxyWMSBasicAPICode: false,
+		genWMSBasicV2APICode:    false,
+		genSrcProxyCodeFile:     false,
+		name:                    "apps/basic/view/vsku",
+		srcBase:                 "/Users/yunfeizhu/Code/golang/wms-v2/apps/basic/view/vsku",
+		pbBase:                  "/Users/yunfeizhu/Code/golang/wmsv2-basic-v2-protobuf/apps/basic/pbbasicv2",
+		pbSrcBase:               "apps/basic/pbbasicv2/pbmhighvalue",
+		basicV2APICodeBase:      "/Users/yunfeizhu/Code/golang/wmsv2-basic-v2/apps/basic/view/vsku",
+		basicV2APIPkg:           "vsku",
+		basicV2ViewType:         "SKUView",
+		codeBase:                "/Users/yunfeizhu/Code/golang/wms-v2/apps/wmslib/wmsbasic",
+		proxyStructType:         "SKUView",
+		callMngMap:              callMngMap,
+		targetStruct:            "SKUView",
+		targetStructs:           []string{"SKUView"},
+		isViewType:              false,
+		isViewOthersType:        true,
+	}
+	return genConf
+}
+
 func getVHighbvalueConf() *CodeGenConf {
 	callMngMap := map[string]string{
 		"HighValueConfigView": "highValueConfigView",
@@ -378,6 +448,32 @@ func getVHighbvalueConf() *CodeGenConf {
 		callMngMap:              callMngMap,
 		targetStruct:            "HighValueConfigView",
 		targetStructs:           []string{"HighValueConfigView"},
+		isViewType:              true,
+	}
+	return genConf
+}
+
+func getVlifecycleConf() *CodeGenConf {
+	callMngMap := map[string]string{
+		"LifeCycleRuleConfigView": "lifeCycleRuleConfigView",
+	}
+	var genConf = &CodeGenConf{
+		genTplFile:              false,
+		genProxyWMSBasicAPICode: false,
+		genWMSBasicV2APICode:    false,
+		genSrcProxyCodeFile:     false,
+		name:                    "apps/config/view/vlifecyclerule",
+		srcBase:                 "/Users/yunfeizhu/Code/golang/wms-v2/apps/config/view/vlifecyclerule",
+		pbBase:                  "/Users/yunfeizhu/Code/golang/wmsv2-basic-v2-protobuf/apps/basic/pbbasicv2",
+		pbSrcBase:               "apps/basic/pbbasicv2/pbmhighvalue",
+		basicV2APICodeBase:      "/Users/yunfeizhu/Code/golang/wmsv2-basic-v2/apps/config/view/vlifecyclerule",
+		basicV2APIPkg:           "vlifecyclerule",
+		basicV2ViewType:         "LifeCycleRuleConfigView",
+		codeBase:                "/Users/yunfeizhu/Code/golang/wms-v2/apps/wmslib/wmsbasic",
+		proxyStructType:         "HighValueManager",
+		callMngMap:              callMngMap,
+		targetStruct:            "LifeCycleRuleConfigView",
+		targetStructs:           []string{"LifeCycleRuleConfigView"},
 		isViewType:              true,
 	}
 	return genConf
@@ -507,6 +603,89 @@ func parsePbStructs(pbSrcBase string, pcode *PCode, packageMap map[string]*Packa
 	return nil
 }
 
+func genNontViewProxyAPICodeFile(genConf *CodeGenConf, packageMap map[string]*Package, pcode *PCode) error {
+	base := genConf.codeBase
+	//pbsrcBase := genConf.pbSrcBase
+	module := pcode.p.name
+	filePre := base + "/" + module
+	//pbSrcPkg := packageMap[pbsrcBase]
+	var err error
+
+	packageHead := "package wmsbasic"
+	apiFiles := []string{packageHead}
+	var dtoFiles []string
+
+	err = genNotViewAPIFile(apiFiles, pcode, "Async", filePre)
+	if err != nil {
+		return err
+	}
+	err = genNotViewAPIFile(apiFiles, pcode, "cronTask", filePre)
+	if err != nil {
+		return err
+	}
+	err = genNotViewAPIFile(apiFiles, pcode, "KafkaMq", filePre)
+	if err != nil {
+		return err
+	}
+	err = genNotViewAPIFile(apiFiles, pcode, "AsyncPayload", filePre)
+	if err != nil {
+		return err
+	}
+
+	pkgName := module
+	methodSet := hashset.New()
+	dtoFiles = append(dtoFiles, genNonViewBasicAPIImplCode(pkgName, pcode.payloadAsync, methodSet)...)
+	dtoFiles = append(dtoFiles, genNonViewBasicAPIImplCode(pkgName, pcode.asynHandlers, methodSet)...)
+	dtoFiles = append(dtoFiles, genNonViewBasicAPIImplCode(pkgName, pcode.cronTaskHandler, methodSet)...)
+	dtoFiles = append(dtoFiles, genNonViewBasicAPIImplCode(pkgName, pcode.kakfaHandler, methodSet)...)
+	err = ioutil.WriteFile(filePre+"_async_api_impl.go", []byte(strings.Join(dtoFiles, "\n")), 0644)
+	if err != nil {
+		return err
+	}
+
+	dtoFiles = []string{"package wmsbasic"}
+	methodPathSet := hashset.New()
+	dtoFiles = append(dtoFiles, genNontViewEndpoint(genConf, module, pcode.payloadAsync, methodPathSet)...)
+	dtoFiles = append(dtoFiles, genNontViewEndpoint(genConf, module, pcode.asynHandlers, methodPathSet)...)
+	dtoFiles = append(dtoFiles, genNontViewEndpoint(genConf, module, pcode.cronTaskHandler, methodPathSet)...)
+	dtoFiles = append(dtoFiles, genNontViewEndpoint(genConf, module, pcode.kakfaHandler, methodPathSet)...)
+	err = ioutil.WriteFile(filePre+"_basic_async_endpoint.go", []byte(strings.Join(dtoFiles, "\n")), 0644)
+	if err != nil {
+		return err
+	}
+	return nil
+
+}
+
+func genNontViewEndpoint(genConf *CodeGenConf, module string, handers map[string]*ViewHandler, set *hashset.Set) []string {
+	var endpoints = []string{}
+	endpoints = append(endpoints, fmt.Sprintf("// %s endpoint", module))
+	endpoints = append(endpoints, "var (")
+	for _, api := range handers {
+		method := api.Method
+		method = strings.ReplaceAll(method, ")", "")
+		if set.Contains(method) {
+			continue
+		}
+		set.Add(method)
+		Path := "openapi/basicv2/" + genConf.name + "/" + method
+
+		endpoints = append(endpoints, fmt.Sprintf("%s WmsBasicApi = \"%s\"", endPointEnum(upFirstChar(module), method), Path))
+	}
+	endpoints = append(endpoints, ")")
+
+	return endpoints
+}
+
+func genNotViewAPIFile(apiFiles []string, pcode *PCode, nontViewType string, filePre string) error {
+	apiFiles = append(apiFiles, buildNotViewPackageProxyBasicAPI(pcode, nontViewType)...)
+
+	err := ioutil.WriteFile(fStr("%s_%s_api.go", filePre, ToSnakeCase(nontViewType)), []byte(strings.Join(apiFiles, "\n")), 0644)
+	if err != nil {
+		return err
+	}
+	return nil
+}
 func genProxyAPICodeFile(genConf *CodeGenConf, packageMap map[string]*Package, pcode *PCode) error {
 	base := genConf.codeBase
 	pbsrcBase := genConf.pbSrcBase
@@ -607,7 +786,7 @@ func genBasicAPIImplCode(conf *CodeGenConf, pkgName string, pcode *PCode, pbSrcP
 		for _, handler := range pcode.viewHanders {
 			paramSignType := fmt.Sprintf("ctx context.Context, header *wrapper.ReqHeader, req *%s", handler.PbReqType)
 			returnType := "interface{}, *wmserror.WMSError"
-			head := fmt.Sprintf("%s%s (%s)(%s) {", receiverPrex, handler.Method, paramSignType, returnType)
+			head := fmt.Sprintf("%s%s (%s)(%s) {", receiverPrex, upFirstChar(handler.Method), paramSignType, returnType)
 
 			body := `	
 	commonReq, err := ToPbBasicCommonReq(header, req)
@@ -615,13 +794,14 @@ func genBasicAPIImplCode(conf *CodeGenConf, pkgName string, pcode *PCode, pbSrcP
 		return nil, err.Mark()
 	}
 resp := &%s{}
-	_, err = m.Client.Post(ctx, VhighvalueSearchHighValue, commonReq, resp, DefaultTimeOut)
+	_, err = m.Client.Post(ctx, %s, commonReq, resp, DefaultTimeOut)
 	if err != nil {
 		return nil, err.Mark()
 	}
 	return resp, nil
 }`
-			bodyStr := fStr(body, handler.PbRespType)
+			url := endPointEnum(upFirstChar(pcode.p.name), handler.Method)
+			bodyStr := fStr(body, handler.PbRespType, url)
 
 			apiImp = append(apiImp, head, bodyStr)
 		}
@@ -640,6 +820,39 @@ resp := &%s{}
 
 	dtoFiles := []string{"package wmsbasic", pcode.genProxyAPIStructDefAndConstruct(), basicAPIProxyBodys}
 	return dtoFiles
+}
+func genNonViewBasicAPIImplCode(pkgName string, async map[string]*ViewHandler, set *hashset.Set) []string {
+
+	receiverPrex := fmt.Sprintf("func (m *%sBasicAPI)", upFirstChar(pkgName))
+
+	apiImp := []string{"package wmsbasic"}
+
+	for _, handler := range async {
+		paramSignType := fmt.Sprintf("ctx context.Context,  req *%s", handler.PbReqType)
+		returnType := "*wmserror.WMSError"
+		method := handler.Method
+		method = strings.ReplaceAll(method, ")", "")
+		if set.Contains(method) {
+			continue
+		}
+		set.Add(method)
+		head := fmt.Sprintf("%s%s (%s)%s {", receiverPrex, upFirstChar(method), paramSignType, returnType)
+
+		body := `	
+resp := &%s{}
+	_, err := m.Client.Post(ctx, %s, req, resp, DefaultTimeOut)
+	if err != nil {
+		return  err.Mark()
+	}
+	return nil
+}`
+		url := endPointEnum(upFirstChar(pkgName), method)
+		bodyStr := fStr(body, handler.PbRespType, url)
+
+		apiImp = append(apiImp, head, bodyStr)
+	}
+	return apiImp
+
 }
 
 func genBasicV2APICodeFile(pkgName string, basicV2ViewType string, base string, pbSrcPkg *Package, pcode *PCode, packageMap map[string]*Package) error {
@@ -704,6 +917,147 @@ func genViewBasicV2APICodeFile(pkgName string, pcode *PCode, conf *CodeGenConf) 
 	apiFiles = append(apiFiles, apis...)
 
 	err = ioutil.WriteFile(filePre+"_proxy_handler.go", []byte(strings.Join(apiFiles, "\n")), 0644)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func genViewAsyncBasicV2APICodeFile(pkgName string, pcode *PCode, conf *CodeGenConf) error {
+	var err error
+	err = genAsyncBasicV2API(pkgName, pcode, conf)
+	if err != nil {
+		return err
+	}
+	err = genKafkaMqBasicV2API(pkgName, pcode, conf)
+	if err != nil {
+		return err
+	}
+	err = genCrontaskBasicV2API(pkgName, pcode, conf)
+	if err != nil {
+		return err
+	}
+	err = genAsyncPayloadBasicV2API(pkgName, pcode, conf)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func genAsyncBasicV2API(pkgName string, pcode *PCode, conf *CodeGenConf) error {
+	module := pcode.p.name
+	var err error
+	filePre := conf.basicV2APICodeBase + "/" + module
+
+	packageHead := fmt.Sprintf("package %s", pkgName)
+	apiFiles := []string{packageHead}
+
+	head := "func init%sProxyHandler(router *wrapper.BasicRouterWrapper, view *%s) {\n"
+	viewAsyncType := "async"
+	initHead := fStr(head, upFirstChar(module)+upFirstChar(viewAsyncType), conf.basicV2ViewType)
+
+	apis := []string{initHead}
+
+	for _, handler := range pcode.asynHandlers {
+		apiFormat := "\twmsv2proxy.RegisterAsyncProxyViewHandler(router, \"%s\", view.%s, &%s{})\n"
+		path := "openapi/basicv2/" + conf.name + "/" + handler.Method
+		apis = append(apis, fStr(apiFormat, path, handler.Method, handler.PbReqType))
+	}
+	apis = append(apis, "}")
+
+	apiFiles = append(apiFiles, apis...)
+
+	err = ioutil.WriteFile(fStr("%s_%s%s", filePre, ToSnakeCase(viewAsyncType), "_proxy_handler.go"), []byte(strings.Join(apiFiles, "\n")), 0644)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+func genAsyncPayloadBasicV2API(pkgName string, pcode *PCode, conf *CodeGenConf) error {
+	module := pcode.p.name
+	var err error
+	filePre := conf.basicV2APICodeBase + "/" + module
+
+	packageHead := fmt.Sprintf("package %s", pkgName)
+	apiFiles := []string{packageHead}
+
+	head := "func init%sProxyHandler(router *wrapper.BasicRouterWrapper, view *%s) {\n"
+	viewAsyncType := "asyncPayload"
+	initHead := fStr(head, upFirstChar(module)+upFirstChar(viewAsyncType), conf.basicV2ViewType)
+
+	apis := []string{initHead}
+
+	for _, handler := range pcode.payloadAsync {
+		apiFormat := "\twmsv2proxy.RegisterAsyncPayloadProxyViewHandler(router, \"%s\", view.%s)\n"
+		path := "openapi/basicv2/" + conf.name + "/" + handler.Method
+		apis = append(apis, fStr(apiFormat, path, handler.Method))
+	}
+	apis = append(apis, "}")
+
+	apiFiles = append(apiFiles, apis...)
+
+	err = ioutil.WriteFile(fStr("%s_%s%s", filePre, ToSnakeCase(viewAsyncType), "_proxy_handler.go"), []byte(strings.Join(apiFiles, "\n")), 0644)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+func genKafkaMqBasicV2API(pkgName string, pcode *PCode, conf *CodeGenConf) error {
+	module := pcode.p.name
+	var err error
+	filePre := conf.basicV2APICodeBase + "/" + module
+
+	packageHead := fmt.Sprintf("package %s", pkgName)
+	apiFiles := []string{packageHead}
+
+	head := "func init%sProxyHandler(router *wrapper.BasicRouterWrapper, view *%s) {\n"
+	viewAsyncType := "kafkaMq"
+	initHead := fStr(head, upFirstChar(module)+upFirstChar(viewAsyncType), conf.basicV2ViewType)
+	apis := []string{initHead}
+
+	for _, handler := range pcode.kakfaHandler {
+		apiFormat := "\twmsv2proxy.RegisterAsyncProxyViewHandler(router, \"%s\", view.%s, &%s{})\n"
+		path := "openapi/basicv2/" + conf.name + "/" + handler.Method
+		apis = append(apis, fStr(apiFormat, path, handler.Method, handler.PbReqType))
+	}
+	apis = append(apis, "}")
+
+	apiFiles = append(apiFiles, apis...)
+
+	err = ioutil.WriteFile(fStr("%s_%s%s", filePre, ToSnakeCase(viewAsyncType), "_proxy_handler.go"), []byte(strings.Join(apiFiles, "\n")), 0644)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func genCrontaskBasicV2API(pkgName string, pcode *PCode, conf *CodeGenConf) error {
+	module := pcode.p.name
+	var err error
+	filePre := conf.basicV2APICodeBase + "/" + module
+
+	packageHead := fmt.Sprintf("package %s", pkgName)
+	apiFiles := []string{packageHead}
+
+	head := "func init%sProxyHandler(router *wrapper.BasicRouterWrapper, view *%s) {\n"
+	viewAsyncType := "contask"
+	initHead := fStr(head, upFirstChar(module)+upFirstChar(viewAsyncType), conf.basicV2ViewType)
+	apis := []string{initHead}
+
+	for _, handler := range pcode.cronTaskHandler {
+		apiFormat := "\twmsv2proxy.RegisterCrontaskProxyViewHandler(router, \"%s\", view.%s)\n"
+		path := "openapi/basicv2/" + conf.name + "/" + handler.Method
+		apis = append(apis, fStr(apiFormat, path, handler.Method))
+	}
+	apis = append(apis, "}")
+
+	apiFiles = append(apiFiles, apis...)
+
+	err = ioutil.WriteFile(fStr("%s_%s%s", filePre, ToSnakeCase(viewAsyncType), "_proxy_handler.go"), []byte(strings.Join(apiFiles, "\n")), 0644)
 	if err != nil {
 		return err
 	}
@@ -1812,6 +2166,10 @@ func genSrcProxyCodeFile(conf *CodeGenConf, pcode *PCode) error {
 	module := pcode.p.name
 	filePre := conf.srcBase + "/" + module
 
+	if conf.isViewOthersType {
+		return genNotViewSrcProxyFile(conf, pcode)
+	}
+
 	if conf.isVew() {
 		return genViewSrcProxyFile(conf, pcode, module, filePre)
 	}
@@ -1850,6 +2208,198 @@ func genNonViewSrcProxyFile(conf *CodeGenConf, pcode *PCode, module string, file
 	return nil
 }
 
+func genNotViewSrcProxyFile(conf *CodeGenConf, pcode *PCode) error {
+
+	var err error
+	err = geSrcViewWithAsyncPayload(conf, pcode)
+	if err != nil {
+		return err
+	}
+	err = geSrcViewWithAsync(conf, pcode)
+	if err != nil {
+		return err
+	}
+	err = geSrcViewWithMq(conf, pcode)
+	if err != nil {
+		return err
+	}
+	err = geSrcViewWithCrontaskWithoutPayload(conf, pcode)
+	if err != nil {
+		return err
+	}
+	return nil
+
+}
+
+func geSrcViewWithAsyncPayload(conf *CodeGenConf, pcode *PCode) error {
+	module := pcode.p.name
+	filePre := conf.srcBase + "/" + module
+	packageHead := fmt.Sprintf("package %s", module)
+	apiFiles := []string{packageHead}
+	viewHanders := pcode.payloadAsync
+	viewAsyncType := "AsyncPayload"
+	set := hashset.New()
+	for _, handler := range viewHanders {
+		method := handler.Method
+		method = strings.ReplaceAll(method, ")", "")
+		if set.Contains(method) {
+			continue
+		}
+		set.Add(method)
+		funcBody := fStr(`func (v *%sProxy) %s(ctx context.Context,  req *asynctask.TaskPayload)  *wmserror.WMSError {
+	var err *wmserror.WMSError
+	originHandler := func(ctx context.Context) {
+		err = v.originView.%s(ctx,  req)
+	}
+	proxyHandler := func(ctx context.Context) *wmserror.WMSError {
+		err= v.%sProxyAPI.%s(ctx, req)
+	if err != nil {
+			return err.Mark()
+		}
+return nil
+	}
+	endPoint := "%s"
+	getBasicHandler()(ctx, endPoint, originHandler, proxyHandler)
+	return err
+}
+`, conf.basicV2ViewType, method, method, upFirstChar(viewAsyncType), upFirstChar(method), method)
+		apiFiles = append(apiFiles, funcBody)
+	}
+	//apiFiles = append(apiFiles, pcode.srcPkgProxyFuncs...)
+	err := ioutil.WriteFile(fStr("%s_%s%s", filePre, ToSnakeCase(viewAsyncType), "_proxy_handler.go"), []byte(strings.Join(apiFiles, "\n")), 0644)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func geSrcViewWithCrontaskWithoutPayload(conf *CodeGenConf, pcode *PCode) error {
+	module := pcode.p.name
+	filePre := conf.srcBase + "/" + module
+	packageHead := fmt.Sprintf("package %s", module)
+	apiFiles := []string{packageHead}
+	viewHanders := pcode.cronTaskHandler
+	viewAsyncType := "cronTask"
+	set := hashset.New()
+	for _, handler := range viewHanders {
+		method := handler.Method
+		method = strings.ReplaceAll(method, ")", "")
+		if set.Contains(method) {
+			continue
+		}
+		set.Add(method)
+		funcBody := fStr(`func (v *%sProxy) %s(ctx context.Context)  *wmserror.WMSError {
+	var err *wmserror.WMSError
+	originHandler := func(ctx context.Context) {
+		err = v.originView.%s(ctx)
+	}
+	proxyHandler := func(ctx context.Context) *wmserror.WMSError {
+req:=&examples.HelloRequest{}
+		err= v.%sProxyAPI.%s(ctx, req)
+	if err != nil {
+			return err.Mark()
+		}
+return nil
+	}
+	endPoint := "%s"
+	getBasicHandler()(ctx, endPoint, originHandler, proxyHandler)
+	return err
+}
+`, conf.basicV2ViewType, method, method, upFirstChar(viewAsyncType), upFirstChar(method), method)
+		apiFiles = append(apiFiles, funcBody)
+	}
+	//apiFiles = append(apiFiles, pcode.srcPkgProxyFuncs...)
+	err := ioutil.WriteFile(fStr("%s_%s%s", filePre, ToSnakeCase(viewAsyncType), "_proxy_handler.go"), []byte(strings.Join(apiFiles, "\n")), 0644)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func geSrcViewWithAsync(conf *CodeGenConf, pcode *PCode) error {
+	module := pcode.p.name
+	filePre := conf.srcBase + "/" + module
+	packageHead := fmt.Sprintf("package %s", module)
+	apiFiles := []string{packageHead}
+	viewHanders := pcode.asynHandlers
+	viewAsyncType := "async"
+	set := hashset.New()
+	for _, handler := range viewHanders {
+		method := handler.Method
+		method = strings.ReplaceAll(method, ")", "")
+		if set.Contains(method) {
+			continue
+		}
+		set.Add(method)
+
+		funcBody := fStr(`func (v *%sProxy) %s(ctx context.Context,  req *%s)  *wmserror.WMSError {
+	var err *wmserror.WMSError
+	originHandler := func(ctx context.Context) {
+		err = v.originView.%s(ctx,  req)
+	}
+	proxyHandler := func(ctx context.Context) *wmserror.WMSError {
+		err= v.%sProxyAPI.%s(ctx, req)
+	if err != nil {
+			return err.Mark()
+		}
+return nil
+	}
+	endPoint := "%s"
+	getBasicHandler()(ctx, endPoint, originHandler, proxyHandler)
+	return err
+}
+`, conf.basicV2ViewType, method, handler.PbReqType, method, upFirstChar(viewAsyncType), upFirstChar(method), method)
+		apiFiles = append(apiFiles, funcBody)
+	}
+	//apiFiles = append(apiFiles, pcode.srcPkgProxyFuncs...)
+	err := ioutil.WriteFile(fStr("%s_%s%s", filePre, ToSnakeCase(viewAsyncType), "_proxy_handler.go"), []byte(strings.Join(apiFiles, "\n")), 0644)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+func geSrcViewWithMq(conf *CodeGenConf, pcode *PCode) error {
+	module := pcode.p.name
+	filePre := conf.srcBase + "/" + module
+	packageHead := fmt.Sprintf("package %s", module)
+	apiFiles := []string{packageHead}
+	viewHanders := pcode.kakfaHandler
+	viewAsyncType := "kafkaMq"
+	set := hashset.New()
+	for _, handler := range viewHanders {
+		method := handler.Method
+		method = strings.ReplaceAll(method, ")", "")
+		if set.Contains(method) {
+			continue
+		}
+		set.Add(method)
+
+		funcBody := fStr(`func (v *%sProxy) %s(ctx context.Context,  req *%s)  *wmserror.WMSError {
+	var err *wmserror.WMSError
+	originHandler := func(ctx context.Context) {
+		err = v.originView.%s(ctx,  req)
+	}
+	proxyHandler := func(ctx context.Context) *wmserror.WMSError {
+		err= v.%sProxyAPI.%s(ctx, req)
+	if err != nil {
+			return err.Mark()
+		}
+return nil
+	}
+	endPoint := "%s"
+	getBasicHandler()(ctx, endPoint, originHandler, proxyHandler)
+	return err
+}
+`, conf.basicV2ViewType, method, handler.PbReqType, method, upFirstChar(viewAsyncType), upFirstChar(method), method)
+		apiFiles = append(apiFiles, funcBody)
+	}
+	//apiFiles = append(apiFiles, pcode.srcPkgProxyFuncs...)
+	err := ioutil.WriteFile(fStr("%s_%s%s", filePre, ToSnakeCase(viewAsyncType), "_proxy_handler.go"), []byte(strings.Join(apiFiles, "\n")), 0644)
+	if err != nil {
+		return err
+	}
+	return nil
+}
 func genViewSrcProxyFile(conf *CodeGenConf, pcode *PCode, module string, filePre string) error {
 	packageHead := fmt.Sprintf("package %s", module)
 	apiFiles := []string{packageHead}
@@ -1869,7 +2419,7 @@ func genViewSrcProxyFile(conf *CodeGenConf, pcode *PCode, module string, filePre
 	getBasicHandler()(ctx, endPoint, originHandler, proxyHandler)
 	return ret0, ret1
 }
-`, conf.basicV2ViewType, handler.Method, handler.Method, handler.PbReqType, handler.Method, handler.Method)
+`, conf.basicV2ViewType, handler.Method, handler.Method, handler.PbReqType, upFirstChar(handler.Method), handler.Method)
 		apiFiles = append(apiFiles, funcBody)
 	}
 	//apiFiles = append(apiFiles, pcode.srcPkgProxyFuncs...)
@@ -1879,19 +2429,6 @@ func genViewSrcProxyFile(conf *CodeGenConf, pcode *PCode, module string, filePre
 	}
 
 	//proxy main.go
-	proxyMain := []string{packageHead}
-
-	val := "const module = \"%s\"\n\nvar apiIdempotent = wmsbasicproxy.APIIdempotent()\n\nfunc getBasicHandler() wmsbasicproxy.BasicProxyHandler {\n\treturn wmsbasicproxy.GetModuleHandler(module)\n}\n"
-	proxyMain = append(proxyMain, fmt.Sprintf(val, module))
-	//
-	//type HighValueManagerProxy struct {
-	//	highValueManager         HighValueManager
-	//	highValueManagerProxyAPI wmsbasic.MhighvalueAPI
-	//}
-	proxyMain = append(proxyMain, fmt.Sprintf("type %sProxy struct{", upFirstChar(conf.targetStruct)))
-	proxyMain = append(proxyMain, fmt.Sprintf("\t %s %s", lowerFirstChar(conf.targetStruct), conf.targetStruct))
-	proxyMain = append(proxyMain, fmt.Sprintf("\t %sProxyAPI wmsbasic.%sAPI", lowerFirstChar(conf.targetStruct), upFirstChar(module)))
-	proxyMain = append(proxyMain, "}")
 
 	proxyMainStr := fStr(`package %s
 
@@ -1907,7 +2444,7 @@ var apiIdempotent = wmsbasicproxy.APIIdempotent()
 func getBasicHandler() wmsbasicproxy.BasicProxyHandler {
 	return wmsbasicproxy.GetModuleHandler(module)
 }
-`, module)
+`, module, module)
 	proxyStructStr := fStr(`type %sProxy struct {
 	originView         *%s
 	proxyAPI wmsbasic.%sAPI
@@ -1968,6 +2505,10 @@ type PCode struct {
 	conf               *CodeGenConf
 	pkgMap             map[string]*Package
 	viewHanders        map[string]*ViewHandler
+	asynHandlers       map[string]*ViewHandler
+	cronTaskHandler    map[string]*ViewHandler
+	payloadAsync       map[string]*ViewHandler
+	kakfaHandler       map[string]*ViewHandler
 }
 
 func (pcode PCode) genProxyAPIStructDefAndConstruct() string {
@@ -2201,6 +2742,122 @@ func parseViewPCode(p *Package, packageMap map[string]*Package, conf *CodeGenCon
 
 }
 
+func parseViewOthersPCode(p *Package, packageMap map[string]*Package, conf *CodeGenConf) *PCode {
+	code := &PCode{
+		p: p,
+	}
+	inStructSet := hashset.New()
+	outStructSet := hashset.New()
+	apis := parseFuncs(p, inStructSet, outStructSet, packageMap)
+
+	var viewHandlers = map[string]*ViewHandler{}
+	code.cronTaskHandler = parsePkgViewCronTabHandler(p)
+	code.payloadAsync = parsePkgViewPayloadAsyncTabHandler(p)
+	code.kakfaHandler = parsePkgViewKakfaTabHandler(p)
+	code.asynHandlers = parsePkgAsyncHandler(p)
+	code.viewHanders = viewHandlers
+	//isNeedProxyMethod := hashset.New()
+	//for _, s := range viewHandlers["view"] {
+	//
+	//}
+	//println(ToPrettyJSON(viewHandlers))
+	//panic("1")
+
+	var funcDefs []string
+	var basicAPIs []string
+	var basicAPIReqs []string
+	var basicAPIPbs []*BASICAPI
+
+	var apiFuncDefsMap = map[SrcEndPoint]string{}
+	var basicAPIsMap = map[SrcEndPoint]string{}
+	var basicAPIReqsMap = map[SrcEndPoint]string{}
+	var basicAPIPbsMap = map[SrcEndPoint]*BASICAPI{}
+	//sort
+	sort.Slice(apis, func(i, j int) bool {
+		return apis[i].Method < apis[j].Method
+	})
+
+	for _, api := range apis {
+		if conf.isVew() {
+			if !api.needProxyViewHandler(viewHandlers) {
+				continue
+			}
+
+		} else {
+
+			if !isExported(api.Method) {
+				//println("method is not exported: ", api.Method)
+				continue
+			}
+
+			if !api.isNeedProxy() {
+				println("no need to proxy", api.Method)
+				continue
+			}
+			//isNeedHandler := isNeedToHandler(api, conf)
+			//if !isNeedHandler {
+			if !api.isNeedHandler(conf) {
+				receiverName := api.ReceiverName
+				println(fmt.Sprintf("receiverName %s is no need to handler", receiverName))
+				continue
+			}
+		}
+
+		endpoint := NewSrcEndPoint(api.Pkg.name, api.Method)
+		funcDefs = append(funcDefs, api.proxyFuncBody2())
+		apiFuncDefsMap[endpoint] = api.proxyFuncBody2()
+
+		basicAPIs = append(basicAPIs, api.BasicAPIInterfaceSignWithComment())
+		basicAPIsMap[endpoint] = api.BasicAPIInterfaceSignWithComment()
+
+		basicAPIReqs = append(basicAPIReqs, api.proxyPbAPIReq())
+		basicAPIReqsMap[endpoint] = api.proxyPbAPIReq()
+
+		basicAPIPbs = append(basicAPIPbs, api.proxyPbAPI())
+		basicAPIPbsMap[endpoint] = api.proxyPbAPI()
+	}
+
+	code.srcPkgProxyFuncMap = apiFuncDefsMap
+	code.basicAPIDefMap = basicAPIsMap
+
+	code.basicAPIReqsMap = basicAPIReqsMap
+	code.basicAPIPbsMap = basicAPIPbsMap
+
+	//prttryStr("func body", strings.Join(funcDefs, "\n"))
+	code.proxyAPIsDefs = buildPackageProxyBasicAPI(code)
+	code.basicAPIPbs = basicAPIPbs
+	//源包
+	code.srcPkgProxyFuncs = funcDefs
+	//代理包
+	code.proxySrcPkgAPIStructs = pReqItemStrs(apis)
+
+	//prttryStr("basic api ", strings.Join(basicAPIs, "\n\n"))
+	//prttryStr("basic api req", strings.Join(basicAPIReqs, "\n\n"))
+	var outStructTypeList []string
+	var inStructTypeList []string
+	for _, i := range inStructSet.Values() {
+		ftype := i.(string)
+		if isNormalType(ftype) || strings.Contains(ftype, ".") {
+			continue
+		}
+
+		inStructTypeList = append(inStructTypeList, ftype)
+		//println(p.name, " inner struct", ftype)
+	}
+	code.innerStructTypes = inStructTypeList
+
+	checkNeedAddJsonTag(p, inStructTypeList)
+
+	for _, i := range outStructSet.Values() {
+		//println(p.name, " out struct", i.(string))
+		outStructTypeList = append(outStructTypeList, i.(string))
+	}
+	code.outStructList = outStructTypeList
+
+	return code
+
+}
+
 type ViewHandler struct {
 	Method      string
 	PbReqType   string
@@ -2211,6 +2868,7 @@ type ViewHandler struct {
 func parsePkgViewHandler(p *Package) map[string]*ViewHandler {
 	var viewHanlers = map[string]*ViewHandler{}
 	var re = regexp.MustCompile(`router.*URL\((.*)\)`)
+	var apiLines []string
 	for _, file := range p.files {
 		for _, l := range readLines(file) {
 			if strings.Contains(l, ".Register") {
@@ -2220,8 +2878,15 @@ func parsePkgViewHandler(p *Package) map[string]*ViewHandler {
 				findAllString := re.FindAllStringSubmatch(defLine, -1)
 				if len(findAllString) > 0 {
 					for _, match := range findAllString[0] {
+						apiLines = append(apiLines, defLine)
 						segs := strings.Split(match, ",")
-						method := strings.Split(segs[1], ".")[1]
+						var method = ""
+						if !strings.Contains(segs[1], ".") {
+							method = segs[1]
+							println(l, "need to deal view==")
+						} else {
+							method = strings.Split(segs[1], ".")[1]
+						}
 						pbReqType := strings.ReplaceAll(strings.ReplaceAll(segs[2], "&", ""), "{}", "")
 						pbRespType := strings.ReplaceAll(pbReqType, "Request", "Response")
 						handler := &ViewHandler{
@@ -2237,9 +2902,252 @@ func parsePkgViewHandler(p *Package) map[string]*ViewHandler {
 			}
 		}
 	}
+
+	if p.name == "vsku" {
+		var addHander = map[string]*ViewHandler{
+			"retrieveCubiDirectly": {
+				Method:      "retrieveCubiDirectly",
+				PbReqType:   "examples.HelloRequest",
+				PbRespType:  "examples.HelloRequest",
+				HandlerType: "view",
+			},
+			"deleteFilesDirectly": {
+				Method:      "deleteFilesDirectly",
+				PbReqType:   "examples.HelloRequest",
+				PbRespType:  "examples.HelloRequest",
+				HandlerType: "view",
+			},
+			"update3DInfoDirectly": {
+				Method:      "update3DInfoDirectly",
+				PbReqType:   "examples.HelloRequest",
+				PbRespType:  "examples.HelloRequest",
+				HandlerType: "view",
+			},
+			"MappingSearch": {
+				Method:      "MappingSearch",
+				PbReqType:   "pbsku.MoveOrderSkuMappingSearchRequest",
+				PbRespType:  "map[string]interface{}",
+				HandlerType: "view",
+			},
+			"getSkuUpc": {
+				Method:      "getSkuUpc",
+				PbReqType:   "pbsku.GetSkuUpcRequest",
+				PbRespType:  "pbsku.GetSkuUpcResponse",
+				HandlerType: "view",
+			}, "iscBaseInventoryQueryBySkuIdList": {
+				Method:      "iscBaseInventoryQueryBySkuIdList",
+				PbReqType:   "pbsku.IscBaseInventoryQueryBySkuIdListRequest",
+				PbRespType:  "pbsku.IscBaseInventoryQueryBySkuIdListResponse",
+				HandlerType: "view",
+			},
+		}
+
+		for k, handler := range addHander {
+			viewHanlers[k] = handler
+		}
+	}
+
+	println("all api len:%v", len(apiLines))
 	return viewHanlers
 }
 
+func parsePkgAsyncHandler(p *Package) map[string]*ViewHandler {
+	viewHanlers := map[string]*ViewHandler{}
+	var re = regexp.MustCompile(`.RegisterMessageHandler\((.*)\)`)
+	var apiLines []string
+	for _, file := range p.files {
+		for _, l := range readLines(file) {
+			if strings.Contains(l, ".Register") {
+				defLine := strings.TrimSpace(l)
+
+				//findAllString := re.FindAllString(l, -1)
+				findAllString := re.FindAllStringSubmatch(defLine, -1)
+				if len(findAllString) > 0 {
+					for _, match := range findAllString[0] {
+						apiLines = append(apiLines, defLine)
+						segs := strings.Split(match, ",")
+						var method = ""
+						if !strings.Contains(segs[1], ".") {
+							method = segs[1]
+							println(l, "need to deal view==")
+						} else {
+							method = strings.Split(segs[1], ".")[1]
+						}
+						method = strings.ReplaceAll(method, ")", "")
+
+						pbReqType := strings.ReplaceAll(strings.ReplaceAll(segs[2], "&", ""), "{}", "")
+						handler := &ViewHandler{
+							Method:      method,
+							PbReqType:   strings.TrimSpace(pbReqType),
+							PbRespType:  "examples.HelloReply",
+							HandlerType: "Aysnc",
+						}
+						viewHanlers[method] = handler
+
+					}
+				}
+			}
+		}
+	}
+
+	if p.name == "vsku" {
+		var addHander = map[string]*ViewHandler{
+			"update3DimensionEvenHandler": {
+				Method:      "update3DimensionEvenHandler",
+				PbReqType:   "message.CubiScanCsvFileSliceWithWhsId",
+				PbRespType:  "examples.HelloReply",
+				HandlerType: "Async",
+			}, "HandleManualPMSSupplierInfoTask": {
+				Method:      "HandleManualPMSSupplierInfoTask",
+				PbReqType:   "message.PMSSupplierSyncMessage",
+				PbRespType:  "examples.HelloReply",
+				HandlerType: "Async",
+			},
+		}
+
+		for k, handler := range addHander {
+			viewHanlers[k] = handler
+			apiLines = append(apiLines, k)
+		}
+	}
+
+	apiLines = uniqSlice(apiLines...)
+	println("all async api len:%v", len(apiLines))
+	println(ToPrettyJSON(apiLines))
+	return viewHanlers
+}
+func parsePkgViewCronTabHandler(p *Package) map[string]*ViewHandler {
+	hanlers := map[string]*ViewHandler{}
+
+	var re = regexp.MustCompile(`.RegisterCrontabHandler\((.*)\)`)
+	var apiLines []string
+	for _, file := range p.files {
+		for _, l := range readLines(file) {
+			if strings.Contains(l, ".Register") {
+				defLine := strings.TrimSpace(l)
+
+				//findAllString := re.FindAllString(l, -1)
+				findAllString := re.FindAllStringSubmatch(defLine, -1)
+				if len(findAllString) > 0 {
+					for _, match := range findAllString[0] {
+						apiLines = append(apiLines, defLine)
+						segs := strings.Split(match, ",")
+						var method = ""
+						if !strings.Contains(segs[1], ".") {
+							method = segs[1]
+							println(l, "need to deal view==")
+						} else {
+							method = strings.Split(segs[1], ".")[1]
+						}
+						method = strings.ReplaceAll(method, ")", "")
+
+						handler := &ViewHandler{
+							Method:      method,
+							PbReqType:   "examples.HelloRequest",
+							PbRespType:  "examples.HelloReply",
+							HandlerType: "cronTask",
+						}
+						hanlers[method] = handler
+
+					}
+				}
+			}
+		}
+	}
+
+	apiLines = uniqSlice(apiLines...)
+	println("all RegisterCrontabHandler api len: ", len(apiLines))
+	println(ToPrettyJSON(apiLines))
+	return hanlers
+}
+
+func parsePkgViewPayloadAsyncTabHandler(p *Package) map[string]*ViewHandler {
+	hanlers := map[string]*ViewHandler{}
+	var re = regexp.MustCompile(`.RegisterPayloadCrontabHandler\((.*)\)`)
+	var apiLines []string
+	for _, file := range p.files {
+		for _, l := range readLines(file) {
+			if strings.Contains(l, ".Register") {
+				defLine := strings.TrimSpace(l)
+
+				//findAllString := re.FindAllString(l, -1)
+				findAllString := re.FindAllStringSubmatch(defLine, -1)
+				if len(findAllString) > 0 {
+					for _, match := range findAllString[0] {
+						apiLines = append(apiLines, defLine)
+						segs := strings.Split(match, ",")
+						var method = ""
+						if !strings.Contains(segs[1], ".") {
+							method = segs[1]
+							println(l, "need to deal view==")
+						} else {
+							method = strings.Split(segs[1], ".")[1]
+						}
+						method = strings.ReplaceAll(method, ")", "")
+
+						handler := &ViewHandler{
+							Method:      method,
+							PbReqType:   "asynctask.TaskPayload",
+							PbRespType:  "examples.HelloReply",
+							HandlerType: "AsyncPayload",
+						}
+						hanlers[method] = handler
+
+					}
+				}
+			}
+		}
+	}
+
+	apiLines = uniqSlice(apiLines...)
+	println("all parsePkgViewPayloadAsyncTabHandler api len: ", len(apiLines))
+	println(ToPrettyJSON(apiLines))
+	return hanlers
+}
+func parsePkgViewKakfaTabHandler(p *Package) map[string]*ViewHandler {
+	hanlers := map[string]*ViewHandler{}
+	var re = regexp.MustCompile(`.RegisterKafkaConsumerFromSystem\((.*)\)`)
+	var apiLines []string
+	for _, file := range p.files {
+		for _, l := range readLines(file) {
+			if strings.Contains(l, ".RegisterKafkaConsumerFromSystem") {
+				defLine := strings.TrimSpace(l)
+
+				//findAllString := re.FindAllString(l, -1)
+				findAllString := re.FindAllStringSubmatch(defLine, -1)
+				if len(findAllString) > 0 {
+					for _, match := range findAllString[0] {
+						apiLines = append(apiLines, defLine)
+						segs := strings.Split(match, ",")
+						var method = ""
+						if !strings.Contains(segs[2], ".") {
+							method = segs[1]
+							println(l, "need to deal view==")
+						} else {
+							method = strings.Split(segs[2], ".")[1]
+						}
+						pbReqType := strings.ReplaceAll(strings.ReplaceAll(segs[3], "&", ""), "{}", "")
+
+						method = strings.ReplaceAll(method, ")", "")
+						handler := &ViewHandler{
+							Method:      method,
+							PbReqType:   pbReqType,
+							PbRespType:  "examples.HelloReply",
+							HandlerType: "KafkaMq",
+						}
+						hanlers[method] = handler
+
+					}
+				}
+			}
+		}
+	}
+
+	apiLines = uniqSlice(apiLines...)
+	println("all RegisterKafkaConsumerFromSystem api len: ", len(apiLines))
+	println(ToPrettyJSON(apiLines))
+	return hanlers
+}
 func readLines(file *File) []string {
 	scanner := bufio.NewScanner(strings.NewReader(file.Source()))
 	scanner.Split(bufio.ScanLines)
@@ -2310,7 +3218,7 @@ func buildViewPackageProxyBasicAPI(pcode *PCode) []string {
 	var basicAPISign []string
 	for _, h := range pcode.viewHanders {
 		if h.HandlerType == "view" {
-			api := fStr("%s(ctx context.Context, header *wrapper.ReqHeader, req *%s)(interface{}, *wmserror.WMSError)", h.Method, h.PbReqType)
+			api := fStr("%s(ctx context.Context, header *wrapper.ReqHeader, req *%s)(interface{}, *wmserror.WMSError)", upFirstChar(h.Method), h.PbReqType)
 			basicAPISign = append(basicAPISign, api)
 		}
 	}
@@ -2320,6 +3228,40 @@ func buildViewPackageProxyBasicAPI(pcode *PCode) []string {
 
 	var wmsbasicAPI []string
 	wmsbasicAPI = append(wmsbasicAPI, fmt.Sprintf("type %sAPI interface {", upFirstChar(pcode.p.name)))
+	wmsbasicAPI = append(wmsbasicAPI, basicAPISign...)
+	wmsbasicAPI = append(wmsbasicAPI, "}")
+	return wmsbasicAPI
+}
+
+func buildNotViewPackageProxyBasicAPI(pcode *PCode, nontViewType string) []string {
+	var basicAPISign []string
+	handers := pcode.viewHanders
+	if nontViewType == "Async" {
+		handers = pcode.asynHandlers
+	}
+	if nontViewType == "cronTask" {
+		handers = pcode.cronTaskHandler
+	}
+	if nontViewType == "KafkaMq" {
+		handers = pcode.kakfaHandler
+	}
+	if nontViewType == "AsyncPayload" {
+		handers = pcode.payloadAsync
+	}
+	for _, h := range handers {
+		method := h.Method
+		method = strings.ReplaceAll(method, ")", "")
+		api := fStr("%s(ctx context.Context,  req *%s)*wmserror.WMSError", upFirstChar(method), h.PbReqType)
+		basicAPISign = append(basicAPISign, api)
+	}
+
+	basicAPISign = uniqSlice(basicAPISign...)
+	sort.Slice(basicAPISign, func(i, j int) bool {
+		return basicAPISign[i] < basicAPISign[j]
+	})
+
+	var wmsbasicAPI []string
+	wmsbasicAPI = append(wmsbasicAPI, fmt.Sprintf("type %s%sAPI interface {", upFirstChar(pcode.p.name), upFirstChar(nontViewType)))
 	wmsbasicAPI = append(wmsbasicAPI, basicAPISign...)
 	wmsbasicAPI = append(wmsbasicAPI, "}")
 	return wmsbasicAPI
@@ -3920,7 +4862,9 @@ func (api *API) methodReturnSign() string {
 	if len(retParams) > 1 {
 		retSign = fmt.Sprintf("(%s)", strings.Join(retParams, ", "))
 	} else {
-		retSign = retParams[0]
+		if len(retParams) > 0 {
+			retSign = retParams[0]
+		}
 	}
 	return retSign
 }

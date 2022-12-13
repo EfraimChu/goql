@@ -132,7 +132,7 @@ func ParsePackage2(packageMap map[string]*Package, path string, inner bool, pack
 	if p := packageMap[path]; p != nil {
 		return nil
 	}
-	println("load package: ", path)
+	//println("load package: ", path)
 	p, err := doLoadPackage(path, packages)
 	if err != nil {
 		return err
@@ -160,7 +160,7 @@ func ParsePbPackage2(packageMap map[string]*Package, path string, packages ...st
 	if p := packageMap[path]; p != nil {
 		return nil
 	}
-	println("load package: ", path)
+	//println("load package: ", path)
 	p, err := doLoadPbPackage(path, packages)
 	if err != nil {
 		return err
